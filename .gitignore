@@ -1,3 +1,9 @@
 dataset/
 runs/
 *.pt
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.vscode/
