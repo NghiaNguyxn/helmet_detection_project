@@ -1,9 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+
+# AI
 dataset/
 runs/
 *.pt
 
-__pycache__/
-*.py[cod]
-*$py.class
+# Enviroment 
+.env
+.env.*
+!.env.example
 
+# IDE
 .vscode/
