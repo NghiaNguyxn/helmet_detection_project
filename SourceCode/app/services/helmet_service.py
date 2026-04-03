@@ -1,51 +1,59 @@
+from fastapi import UploadFile, BackgroundTasks
+from fastapi.concurrency import run_in_threadpool
 from ultralytics import YOLO
-from ultralytics.engine.results import Results
-import numpy as np
 import cv2
+import numpy as np
 import base64
+import time
 
-from app.schemas.helmet_schema import Detection, BoundingBox, PredictResponse
+from app.schemas.helmet_schema import PredictResponse
+from app.core.config import setting
+from app.exceptions.helmet import ImageDecodingError
+from app.services.violation_services import save_violation_backtask
+from app.utils.drawing import annotated_helmet_frame
 
-async def detect_image(file, model: YOLO):
-    # Read file
-    contents = await file.read()
+last_alert_time = 0
 
-    # Convert to OpenCV image
-    np_img = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection, background_tasks: BackgroundTasks) -> PredictResponse:
+    global last_alert_time
+    current_time = time.time()
 
-    # Run model
-    results: Results = model(img)
-    # results = model.predict(source=img, imgsz=416)
-    result = results[0]
+    try:
+        # Đọc dữ liệu binary từ UploadFile theo chuẩn FastAPI
+        contents = await file.read() 
 
-    detections = []
+        # Chuyển dữ liệu binary sang OpenCV Image (NumPy array)
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-    if result.boxes is not None:
-        for box in result.boxes:
-            bbox = box.xyxy[0].tolist()
+        if img is None:
+            raise ImageDecodingError()
+    except Exception as e:
+        raise ImageDecodingError()
 
-            detection = Detection(
-                class_id=int(box.cls[0]),
-                confidence=float(box.conf[0]),
-                bbox=BoundingBox(
-                    x1=bbox[0],
-                    y1=bbox[1],
-                    x2=bbox[2],
-                    y2=bbox[3],
-                )
-            )
-            detections.append(detection)
+    # 1. Chạy AI
+    results = await run_in_threadpool(
+        model.predict, 
+        img, 
+        imgsz=416, 
+        conf=setting.VIOLATION_THRESHOLD, 
+        verbose=True
+    )
+    
+    # 2. Vẽ bounding box và đếm số lượng vi phạm
+    annotated_frame, all_detections, violation_count = annotated_helmet_frame(img, results)
 
-    # Draw result image
-    annotated_img = result.plot()
-
-    # Encode image to base64
-    _, buffer = cv2.imencode(".jpg", annotated_img)
-    image_base64 = base64.b64encode(buffer).decode("utf-8")
+    # 3. Logic lưu Database (Chỉ lưu khi có vi phạm và hết Cooldown)
+    if(violation_count > 0 and (current_time - last_alert_time > setting.ALERT_COOLDOWN)):
+        last_alert_time = current_time
+        background_tasks.add_task(save_violation_backtask, annotated_frame, violation_count, all_detections, db_collection)
+        
+    # 4. Trả về tất cả detections (bao gồm cả người đội mũ và không đội mũ)
+    _, buffer = cv2.imencode(".jpg", annotated_frame)
+    img_base64 = base64.b64encode(buffer).decode("utf-8")
 
     return PredictResponse(
-        detections=detections,
-        total_detections=len(detections),
-        image_base64=image_base64
+        detections=all_detections,
+        total_detections=len(all_detections),
+        image_base64=img_base64
     )
