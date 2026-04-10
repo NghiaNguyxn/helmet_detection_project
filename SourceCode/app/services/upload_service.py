@@ -3,6 +3,7 @@ from cloudinary.uploader import upload
 from app.core.config import setting
 import cv2
 import numpy as np
+import asyncio
 
 # Cấu hình Cloudinary ngay khi module được import
 cloudinary.config(
@@ -17,13 +18,14 @@ async def upload_image_to_cloudinary(image: np.ndarray) -> str:
         Upload image (NumPy array) to Cloudinary and return the secure URL.
     """
     
-     # 1. Chuyển ma trận ảnh OpenCV sang định dạng bytes (để Cloudinary có thể đọc được)
+    # 1. Chuyển ma trận ảnh OpenCV sang định dạng bytes (để Cloudinary có thể đọc được)
     _, buffer = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
     image_bytes = buffer.tobytes()
 
     # 2. Thực hiện upload
     # folder="ptit_helmet" giúp gom nhóm ảnh trên Cloudinary cho gọn
-    upload_result = upload(
+    upload_result = await asyncio.to_thread(
+        upload,
         file=image_bytes,
         folder="ptit_helmet",
         resource_type="image"

@@ -12,11 +12,7 @@ from app.exceptions.helmet import ImageDecodingError
 from app.services.violation_services import save_violation_backtask
 from app.utils.drawing import annotated_helmet_frame
 
-last_alert_time = 0
-
 async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection, background_tasks: BackgroundTasks) -> PredictResponse:
-    global last_alert_time
-    current_time = time.time()
 
     try:
         # Đọc dữ liệu binary từ UploadFile theo chuẩn FastAPI
@@ -44,8 +40,7 @@ async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection
     annotated_frame, all_detections, violation_count = annotated_helmet_frame(img, results)
 
     # 3. Logic lưu Database (Chỉ lưu khi có vi phạm và hết Cooldown)
-    if(violation_count > 0 and (current_time - last_alert_time > setting.ALERT_COOLDOWN)):
-        last_alert_time = current_time
+    if(violation_count > 0):
         background_tasks.add_task(save_violation_backtask, annotated_frame, violation_count, all_detections, db_collection)
         
     # 4. Trả về tất cả detections (bao gồm cả người đội mũ và không đội mũ)

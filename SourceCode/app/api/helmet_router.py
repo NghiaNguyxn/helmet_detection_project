@@ -5,20 +5,21 @@ from motor.motor_asyncio import AsyncIOMotorCollection
 
 from app.services.helmet_service import process_and_log_violation
 from app.schemas.helmet_schema import PredictResponse
+from app.schemas.base_schema import BaseResponse
 from app.dependencies.model import get_model
-from app.dependencies.database import get_violation_collection
-from app.services.video_service import gennerated_video_frames
-from app.core.config import setting
+from app.dependencies.nosql_database import get_violation_collection
+from app.dependencies.user import allow_admin, allow_any_staff
+from app.services.video_service import generated_video_frames
 from app.exceptions.helmet import InvalidFileTypeError
 
 router = APIRouter(prefix="/helmet", tags=["Helmet Detection"])
 
-@router.post("/predict", response_model=PredictResponse, status_code=status.HTTP_200_OK)
+@router.post("/predict", response_model=BaseResponse[PredictResponse])
 async def predict_image(
     file: UploadFile = File(...),
     model: YOLO = Depends(get_model),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     """
     Predict helmet usage from an uploaded image:
@@ -37,9 +38,13 @@ async def predict_image(
     
     result = await process_and_log_violation(file, model, db_collection, background_tasks)
     
-    return result
+    return BaseResponse(
+        code=status.HTTP_200_OK,
+        message="Predict successfully",
+        result=result
+    )
 
-@router.get("/video-feed")
+@router.get("/video-feed", dependencies=[Depends(allow_any_staff)])
 async def video_feed(
     model: YOLO = Depends(get_model),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection),
@@ -56,6 +61,6 @@ async def video_feed(
     """
     
     return StreamingResponse(
-        gennerated_video_frames(model, db_collection, background_tasks), 
+        generated_video_frames(model, db_collection, background_tasks), 
         media_type="multipart/x-mixed-replace; boundary=frame"
     )

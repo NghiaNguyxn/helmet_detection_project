@@ -1,22 +1,31 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from sqlmodel import Session
 from pathlib import Path
 from contextlib import asynccontextmanager
 from ultralytics import YOLO
 
 from app.core.config import setting
 from app.exceptions.handlers import register_exception_handlers
-from app.api import helmet_router, violations_router
+from app.api import helmet_router, violations_router, user_router, auth_router, report_router
+from app.database.sql_database import init_sql_db
+from app.database.nosql_database import connect_to_mongodb, close_mongodb_connection
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Loading model...")
 
     app.state.model = YOLO(setting.MODEL_PATH)
-
     print("Model loaded successfully")
 
+    init_sql_db()
+    print("SQL database initialized")
+
+    await connect_to_mongodb(app)
+
     yield
+
+    await close_mongodb_connection(app)
 
     print("Shutting down system...")
 
@@ -54,3 +63,6 @@ async def health_check():
 
 app.include_router(helmet_router.router)
 app.include_router(violations_router.router)
+app.include_router(user_router.router)
+app.include_router(auth_router.router)
+app.include_router(report_router.router)
