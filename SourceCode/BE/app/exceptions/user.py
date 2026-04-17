@@ -1,0 +1,43 @@
+from .base import AppError
+
+class UserAlreadyVerified(AppError):
+    """Exception raised when trying to verify an already verified email."""
+
+    def __init__(self, message="Email has been verified"):
+        super().__init__(message)
+
+class UserInactive(AppError):
+    """Exception raised when trying to authenticate an inactive user."""
+
+    def __init__(self, message = "Your account is currently locked"):
+        super().__init__(message)
+
+class UserNotVerified(AppError):
+    """Exception raised when trying to authenticate a user whose email is not verified."""
+
+    def __init__(self, message = "Email account not yet verified"):
+        super().__init__(message)
+
+class UserAlreadyExists(AppError):
+    """Exception raised when trying to register with an email that already exists in the system."""
+
+    def __init__(self, message: str = "User already exists in the system"):
+        super().__init__(message)
+
+class UserNotFound(AppError):
+    """Exception raised when trying to authenticate or reset password for a non-existent user."""
+
+    def __init__(self, message = "User does not exists"):
+        super().__init__(message)
+
+class UserCannotUpdateStatus(AppError):
+    """Exception raised when trying to update the status of an admin user."""
+
+    def __init__(self, message = "Cannot update the status of Administrative personnel"):
+        super().__init__(message)
+
+class UserCannotDelete(AppError):
+    """Exception raised when trying to delete an admin user."""
+
+    def __init__(self, message = "Cannot delete Administrative personnel"):
+        super().__init__(message)

@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0b1326;
+  --color-surface-low: #131b2e;
+  --color-surface: #171f33;
+  --color-surface-highest: #2d3449;
+  --color-primary: #aac7ff;
+  --color-primary-rgb: 170, 199, 255;
+  --color-primary-container: #3e90ff;
+  --color-secondary: #4edea3;
+  --color-secondary-rgb: 78, 222, 163;
+  --color-secondary-container: #00a572;
+  --color-error: #ffb2b7;
+  --color-error-rgb: 255, 178, 183;
+  --color-error-container: #ff516a;
+  --color-on-surface: #dae2fd;
+  --color-on-surface-variant: #c0c6d6;
+  
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
+  
+  --radius-md: 0.75rem;
+  --radius-sm: 0.25rem;
+}
+
+@layer base {
+  /* Hide default number input arrows */
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type=number] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer utilities {
+  .custom-number-input {
+    @apply flex items-center bg-surface border border-on-surface/10 rounded-sm overflow-hidden transition-all duration-200;
+  }
+
+  .custom-number-input:focus-within {
+    @apply border-primary/50;
+    box-shadow: 0 0 0 1px rgba(var(--color-primary-rgb), 0.1);
+  }
+
+  .custom-number-input input {
+    @apply w-full bg-transparent border-none outline-none px-3 py-2 text-[10px] font-mono text-on-surface text-center;
+  }
+
+  .custom-number-btn {
+    @apply flex items-center justify-center w-8 h-8 bg-on-surface/5 text-on-surface-variant border-none cursor-pointer transition-all;
+  }
+
+  .custom-number-btn:hover {
+    @apply bg-primary/20 text-primary;
+  }
+
+  .custom-number-btn:active {
+    @apply bg-primary/30;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface antialiased font-sans;
+    background-color: #0b1326;
+  }
+
+  /* Global interactive cursor styles */
+  button, 
+  select, 
+  a, 
+  label, 
+  input[type="button"], 
+  input[type="submit"], 
+  [role="button"] {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /* Surface Tier Stack (from DESIGN.md) */
+  .surface-0 { @apply bg-background; }
+  .surface-1 { @apply bg-surface-low; }
+  .surface-2 { @apply bg-surface; }
+  .surface-3 { @apply bg-surface-highest; }
+
+  /* Technical HUD glow */
+  .tech-glow {
+    box-shadow: 0 0 15px rgba(170, 199, 255, 0.1);
+  }
+  
+  .primary-glow {
+    box-shadow: 0 0 4px rgba(170, 199, 255, 0.2);
+  }
+}
+
+/* Custom scrollbars for high-tech look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-surface-low;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-surface rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-primary/20;
+}

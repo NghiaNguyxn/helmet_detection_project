@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xác thực email</title>
+    <style>
+        /* Reset styles */
+        body, table, td, p, a {
+            margin: 0;
+            padding: 0;
+            border: 0;
+            font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #f4f7fb;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .header {
+            background-color: #1e3a8a; /* xanh đậm */
+            padding: 24px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            font-size: 24px;
+            margin: 0;
+            font-weight: 600;
+        }
+        .content {
+            padding: 32px 28px;
+            background-color: #ffffff;
+        }
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #1f2937;
+        }
+        .message {
+            font-size: 16px;
+            line-height: 1.5;
+            color: #374151;
+            margin-bottom: 24px;
+        }
+        .button {
+            display: inline-block;
+            background-color: #2563eb;
+            color: #ffffff;
+            text-decoration: none;
+            padding: 12px 28px;
+            border-radius: 8px;
+            font-weight: 600;
+            margin: 20px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .button:hover {
+            background-color: #1d4ed8;
+        }
+        .fallback-link {
+            font-size: 14px;
+            word-break: break-all;
+            color: #6b7280;
+            margin-top: 16px;
+        }
+        .footer {
+            background-color: #f9fafb;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #9ca3af;
+            border-top: 1px solid #e5e7eb;
+        }
+        @media (max-width: 600px) {
+            .content { padding: 24px 16px; }
+            .button { padding: 10px 20px; }
+        }
+    </style>
+</head>
+<body style="background-color: #eef2f5; padding: 20px;">
+    <div class="container">
+        <div class="header">
+            <h1>🔐 Xác thực tài khoản</h1>
+        </div>
+        <div class="content">
+            <p class="greeting">Xin chào <strong>{{ username }}</strong>,</p>
+            <p class="message">
+                Cảm ơn bạn đã đăng ký tài khoản tại hệ thống <strong>Helmet Detection</strong>.<br>
+                Vui lòng xác thực địa chỉ email của bạn bằng cách nhấp vào nút bên dưới. Liên kết này có hiệu lực trong 24 giờ.
+            </p>
+            <div style="text-align: center;">
+                <a href="{{ verify_url }}" class="button">Xác thực email</a>
+            </div>
+            <div class="fallback-link">
+                Nếu nút không hoạt động, vui lòng sao chép đường dẫn sau vào trình duyệt:<br>
+                <a href="{{ verify_url }}" style="color: #2563eb;">{{ verify_url }}</a>
+            </div>
+            <p class="message" style="margin-top: 24px; font-size: 14px;">
+                Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email.
+            </p>
+        </div>
+        <div class="footer">
+            &copy; 2026 Helmet Detection System. Bảo vệ an toàn giao thông.
+        </div>
+    </div>
+</body>
+</html>
