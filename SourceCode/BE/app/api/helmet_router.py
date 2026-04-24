@@ -1,4 +1,5 @@
-from fastapi import APIRouter, BackgroundTasks, UploadFile, File, HTTPException, Depends, status, Request
+from typing import Annotated
+from fastapi import APIRouter, BackgroundTasks, UploadFile, File, HTTPException, Depends, status, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from ultralytics import YOLO
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -8,11 +9,33 @@ from SourceCode.BE.app.schemas.helmet_schema import PredictResponse
 from SourceCode.BE.app.schemas.base_schema import BaseResponse
 from SourceCode.BE.app.dependencies.model import get_model
 from SourceCode.BE.app.dependencies.nosql_database import get_violation_collection
-from SourceCode.BE.app.dependencies.user import allow_admin, allow_any_staff
+from SourceCode.BE.app.dependencies.user import allow_any_staff, VerifiedUser
 from SourceCode.BE.app.services.video_service import generated_video_frames, stop_video_frames
 from SourceCode.BE.app.exceptions.helmet import InvalidFileTypeError, CannotStopCameraError
+from SourceCode.BE.app.core.websocket_manager import manager
 
 router = APIRouter(prefix="/helmet", tags=["Helmet Detection"])
+
+@router.websocket("/ws")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    user: VerifiedUser
+):
+    """
+    WebSocket endpoint for real-time helmet detection:
+    - Accepts WebSocket connection from authenticated clients
+    - Adds new connection to the active connections list
+    - Listens for incoming messages (kept alive for now)
+    - Removes connection upon disconnection
+    """
+
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive and handle incoming messages if needed
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 @router.post("/predict", response_model=BaseResponse[PredictResponse])
 async def predict_image(
@@ -46,10 +69,8 @@ async def predict_image(
 
 @router.get("/video-feed", dependencies=[Depends(allow_any_staff)])
 async def video_feed(
-    request: Request,
     model: YOLO = Depends(get_model),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """
     Endpoint for live video stream with helmet detection:
@@ -62,12 +83,16 @@ async def video_feed(
     """
     
     return StreamingResponse(
-        generated_video_frames(request, model, db_collection, background_tasks), 
+        generated_video_frames(model, db_collection), 
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 @router.post("/stop-video-feed", dependencies=[Depends(allow_any_staff)])
 async def stop_video_feed():
+    """
+    Stop the live video stream.
+    """
+
     try:
         stop_video_frames()
         return BaseResponse(

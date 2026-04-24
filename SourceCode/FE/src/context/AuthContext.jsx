@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
+import socketService from '../services/websocket';
 
 const AuthContext = createContext(null);
 
@@ -36,6 +37,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    socketService.disconnect();
     localStorage.removeItem('token');
     localStorage.removeItem('helmet_session_stats');
     localStorage.removeItem('helmet_processed_ids');

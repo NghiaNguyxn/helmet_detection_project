@@ -22,7 +22,7 @@ class SummaryReportResponse(BaseModel):
 
 class TrendReportResponse(BaseModel):
     labels: list[str]  # dates or hours
-    datasets: dict[str, list[int]]  # vd: {"violations": [1,2,3]}
+    datasets: dict[str, list[float]]  # vd: {"violations": [1,2,3], "accuracy": [98.5, 99.0]}
 
 class ExportReportRequest(BaseModel):
     start_date: date

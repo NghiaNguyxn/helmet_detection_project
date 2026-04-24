@@ -1,24 +1,28 @@
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
+from fastapi import FastAPI
+import logging
+
 from SourceCode.BE.app.core.config import setting
-from SourceCode.BE.app.exceptions.base import AppError
 
-async def connect_to_mongodb(app) -> AsyncIOMotorClient:
+logger = logging.getLogger(__name__)
+
+async def connect_to_mongodb(app: FastAPI):
     """Initialize MongoDB client and store it in app state."""
-    
-    print("Connecting to MongoDB Atlas...")
-    client = AsyncIOMotorClient(setting.MONGO_URL, tls=True)
 
+    logger.info("Connecting to MongoDB Atlas...")
     try:
-        await client.admin.command('ping')
-        app.state.nosql_client = client
-        print("MongoDB Atlas connected!")
-    except AppError as e:
-        print(f"MongoDB connection failed: {e}")
+        app.state.mongodb_client = AsyncIOMotorClient(setting.MONGO_URL)
+        app.state.db = app.state.mongodb_client[setting.DATABASE_NAME]
+        # Verify connection
+        await app.state.mongodb_client.admin.command('ping')
+        logger.info("MongoDB Atlas connected!")
+    except Exception as e:
+        logger.error(f"MongoDB connection failed: {e}")
         raise e
-    
-async def close_mongodb_connection(app):
-    """Close MongoDB client connection."""
 
-    if hasattr(app.state, "nosql_client"):
-        app.state.nosql_client.close()
-        print("MongoDB connection closed.")
+async def close_mongodb_connection(app: FastAPI):
+    """Close MongoDB connection."""
+
+    if hasattr(app.state, 'mongodb_client'):
+        app.state.mongodb_client.close()
+        logger.info("MongoDB connection closed.")

@@ -5,13 +5,13 @@ from SourceCode.BE.app.services import user_service
 from SourceCode.BE.app.dependencies.sql_database import SessionDep
 from SourceCode.BE.app.schemas import user_schema
 from SourceCode.BE.app.schemas.base_schema import BaseResponse
-from SourceCode.BE.app.dependencies.user import CurrentUser, allow_admin
+from SourceCode.BE.app.dependencies.user import ActiveUser, VerifiedUser, allow_admin
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("/me", response_model=BaseResponse[user_schema.UserResponse])
 async def read_users_me(
-    current_user: CurrentUser
+    current_user: ActiveUser
 ):
     """Get current authenticated user details"""
 
@@ -37,7 +37,7 @@ async def read_users(
 @router.patch("/me", response_model=BaseResponse[user_schema.UserResponse])
 async def update_user_me(
     user_update: user_schema.UserUpdate,
-    current_user: CurrentUser,
+    current_user: ActiveUser,
     session: SessionDep
 ):
     """Update current authenticated user's details"""
@@ -52,7 +52,7 @@ async def update_user_me(
 
 @router.patch("/me/avatar", response_model=BaseResponse[user_schema.UserResponse])
 async def update_user_avatar(
-    current_user: CurrentUser,
+    current_user: ActiveUser,
     session: SessionDep,
     file: UploadFile = File(...)
 ):
@@ -68,7 +68,7 @@ async def update_user_avatar(
 @router.post("/change-password")
 async def change_password(
     request: auth_schema.ChangePasswordRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     session: SessionDep
 ):
     """Change current authenticated user's password"""

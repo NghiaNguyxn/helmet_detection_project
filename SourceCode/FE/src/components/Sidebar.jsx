@@ -24,13 +24,13 @@ const Sidebar = () => {
 
   return (
     <aside className="w-64 bg-surface-low border-r border-on-surface/5 flex flex-col h-screen sticky top-0">
-      <div className="p-6 flex items-center gap-3 border-b border-on-surface/5">
-        <div className="p-2 bg-primary/10 rounded-lg">
-          <Shield className="w-6 h-6 text-primary" />
+      <div className="px-6 h-16 flex items-center gap-3 border-b border-on-surface/5 shrink-0">
+        <div className="p-1 overflow-hidden">
+          <img src="/ptit-logo.png" alt="PTIT Logo" className="w-7 h-7 object-contain" />
         </div>
-        <div>
-          <h1 className="text-lg font-bold tracking-tight text-on-surface uppercase leading-none">Sentinel</h1>
-          <span className="text-[10px] text-primary/70 font-mono uppercase tracking-[0.2em]">Tactical Oversight</span>
+        <div className="flex flex-col">
+          <h1 className="text-lg font-bold tracking-tight text-on-surface uppercase leading-tight hover:text-primary transition-colors cursor-default">Sentinel</h1>
+          <span className="text-[9px] text-primary/60 font-mono uppercase tracking-[0.2em] -mt-0.5">Tactical Oversight</span>
         </div>
       </div>
 

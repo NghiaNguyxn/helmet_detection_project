@@ -6,7 +6,7 @@ from SourceCode.BE.app.dependencies.nosql_database import get_violation_collecti
 from SourceCode.BE.app.dependencies.user import allow_admin, allow_any_staff
 from SourceCode.BE.app.schemas.helmet_schema import ViolationHistoryResponse
 from SourceCode.BE.app.schemas.base_schema import BaseResponse
-from SourceCode.BE.app.services import violation_services
+from SourceCode.BE.app.services import violation_service
 
 router = APIRouter(prefix="/violations", tags=["Violations History"])
 
@@ -28,7 +28,7 @@ async def get_violation_history(
     """
     Get paginated and filtered violation history from MongoDB.
     """
-    response = await violation_services.get_violation_history(
+    response = await violation_service.get_violation_history(
         db_collection=db_collection, 
         page=page, 
         limit=limit,
@@ -48,7 +48,7 @@ async def delete_violation(
 ):
     """Delete a violation record (Admin Only)"""
 
-    success = await violation_services.delete_violation(db_collection, violation_id)
+    success = await violation_service.delete_violation(db_collection, violation_id)
     if not success:
         return BaseResponse(code=status.HTTP_404_NOT_FOUND, message="Violation record not found")
     return BaseResponse(code=status.HTTP_200_OK, message="Violation record deleted successfully")
@@ -63,7 +63,7 @@ async def export_violation_history(
 ):
     """Export filtered violation history to Excel"""
 
-    excel_buffer = await violation_services.export_violations_to_excel(
+    excel_buffer = await violation_service.export_violations_to_excel(
         db_collection=db_collection,
         start_date=start_date,
         end_date=end_date,

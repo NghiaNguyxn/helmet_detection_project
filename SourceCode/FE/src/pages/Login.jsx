@@ -3,7 +3,6 @@ import { Shield, Eye, EyeOff, Lock, User, Loader2, AlertTriangle, Mail, ArrowLef
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { loginApi } from '../services/api';
-import api from '../services/api';
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -82,8 +81,8 @@ const Login = () => {
       <div className="w-full max-w-md relative">
         <div className="surface-1 border border-on-surface/5 p-8 rounded-md tech-glow">
           <div className="flex flex-col items-center mb-8">
-            <div className="p-3 bg-primary/10 rounded-xl mb-4 border border-primary/20">
-              <Shield className="w-8 h-8 text-primary" />
+            <div className="p-2 mb-4 overflow-hidden group">
+              <img src="/ptit-logo.png" alt="Logo" className="w-16 h-16 object-contain transition-transform group-hover:scale-105" />
             </div>
             <h1 className="text-2xl font-bold text-on-surface tracking-tight uppercase">Tactical Access</h1>
             <p className="text-on-surface-variant text-sm mt-1 uppercase tracking-widest font-mono">System Authentication Required</p>

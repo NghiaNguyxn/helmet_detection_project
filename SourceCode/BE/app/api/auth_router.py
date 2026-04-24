@@ -1,4 +1,8 @@
 from typing import Annotated
+import logging
+
+logger = logging.getLogger(__name__)
+
 from datetime import timedelta
 from fastapi import APIRouter, Depends, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
@@ -133,7 +137,7 @@ async def forgot_password(
             token=reset_token
         )
     except Exception as e:
-        print(f"Error sending password reset email: {e}")
+        logger.error(f"Error sending password reset email: {e}")
 
     return BaseResponse(
         code=status.HTTP_200_OK,

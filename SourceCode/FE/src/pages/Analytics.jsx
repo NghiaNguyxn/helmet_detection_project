@@ -9,7 +9,10 @@ import {
   Filter
 } from 'lucide-react';
 import api from '../services/api';
+import socketService from '../services/websocket';
 import CustomDropdown from '../components/CustomDropdown';
+import Skeleton from '../components/Skeleton';
+import EmptyState from '../components/EmptyState';
 
 const Sparkline = ({ data, color, height = 30, width = 100 }) => {
   if (!data || data.length < 2) return <div style={{ height, width }}></div>;
@@ -86,16 +89,42 @@ const Analytics = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Real-time updates from WebSocket
+  useEffect(() => {
+    const unsubscribe = socketService.subscribe((message) => {
+      if (message.event === 'new_violation') {
+        // Only update stats if we are looking at current data (today, 7d, 30d, all)
+        if (timeRange !== 'yesterday' && summary) {
+          setSummary(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              total_violations: prev.total_violations + 1,
+              total_detections: prev.total_detections + 1, // Assume it was detected
+              // Note: We don't update peak_hour or trend array here for simplicity,
+              // but total counts will jump immediately.
+            };
+          });
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [timeRange, summary]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
       let startDateStr = today;
+      let endDateStr = today;
 
       const start = new Date();
       if (timeRange === 'yesterday') {
         start.setDate(start.getDate() - 1);
-        startDateStr = start.toISOString().split('T')[0];
+        const yesterdayStr = start.toISOString().split('T')[0];
+        startDateStr = yesterdayStr;
+        endDateStr = yesterdayStr; // Chỉ lấy duy nhất ngày hôm qua
       } else if (timeRange === '7d') {
         start.setDate(start.getDate() - 7);
         startDateStr = start.toISOString().split('T')[0];
@@ -107,8 +136,8 @@ const Analytics = () => {
       }
 
       const [summaryRes, trendRes] = await Promise.all([
-        api.get(`/reports/summary?start_date=${startDateStr}&end_date=${today}`),
-        api.get(`/reports/trend?start_date=${startDateStr}&end_date=${today}&granularity=${granularity}`)
+        api.get(`/reports/summary?start_date=${startDateStr}&end_date=${endDateStr}`),
+        api.get(`/reports/trend?start_date=${startDateStr}&end_date=${endDateStr}&granularity=${granularity}`)
       ]);
 
       if (summaryRes.data.code === 200) setSummary(summaryRes.data.result);
@@ -156,7 +185,7 @@ const Analytics = () => {
       value: summary ? `${summary.accuracy}%` : '100.0%',
       icon: Target,
       color: 'bg-primary/10 text-primary',
-      trendData: [98, 97, 99, 98.5, 99, 98.2, 99.1, summary?.accuracy || 99]
+      trendData: trend?.datasets?.accuracy?.slice(-10) || [100, 100, 100, 100, 100]
     },
     {
       label: 'Peak Hour',
@@ -209,47 +238,60 @@ const Analytics = () => {
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, i) => (
-          <div key={i} className="surface-1 border border-on-surface/5 p-6 rounded-md tech-glow group hover:border-primary/20 transition-all">
-            <div className="flex items-center justify-between mb-5">
-              <div className={`p-2.5 rounded-xl border border-on-surface/5 ${stat.color} shadow-inner`}>
-                <stat.icon className="w-5 h-5" />
+        {loading ? (
+          Array(4).fill(0).map((_, i) => (
+            <div key={i} className="surface-1 border border-on-surface/5 p-6 rounded-md tech-glow">
+              <div className="flex items-center justify-between mb-5">
+                <Skeleton width="40px" height="40px" rounded="rounded-xl" />
+                <Skeleton width="60px" height="12px" />
               </div>
-              <div className="flex flex-col items-end gap-1">
-                <span className="text-[7px] font-mono text-on-surface-variant uppercase tracking-widest font-bold opacity-60">
-                  {stat.isPeak ? 'Time-based' : 'Live Sync'}
-                </span>
-                <div className="w-12 h-1 bg-on-surface/10 rounded-full overflow-hidden">
-                  <div className="w-3/4 h-full bg-current opacity-60 rounded-full animate-pulse"></div>
+              <Skeleton width="100px" height="14px" className="mb-3" />
+              <Skeleton width="140px" height="32px" />
+            </div>
+          ))
+        ) : (
+          stats.map((stat, i) => (
+            <div key={i} className="surface-1 border border-on-surface/5 p-6 rounded-md tech-glow group hover:border-primary/20 transition-all">
+              <div className="flex items-center justify-between mb-5">
+                <div className={`p-2.5 rounded-xl border border-on-surface/5 ${stat.color} shadow-inner`}>
+                  <stat.icon className="w-5 h-5" />
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="text-[7px] font-mono text-on-surface-variant uppercase tracking-widest font-bold opacity-60">
+                    {stat.isPeak ? 'Time-based' : 'Live Sync'}
+                  </span>
+                  <div className="w-12 h-1 bg-on-surface/10 rounded-full overflow-hidden">
+                    <div className="w-3/4 h-full bg-current opacity-60 rounded-full animate-pulse"></div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-[11px] font-bold font-mono text-on-surface-variant uppercase tracking-[0.2em] mb-2 pl-0.5">{stat.label}</p>
-                {stat.isPeak ? (
-                  renderPeakHour(stat.value)
-                ) : (
-                  <p className={`text-3xl font-black font-mono tracking-tight leading-none mt-1 ${stat.value === '0' || stat.value === '0.0%' ? 'text-on-surface/20' : 'text-on-surface'}`}>
-                    {stat.value}
-                  </p>
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-[11px] font-bold font-mono text-on-surface-variant uppercase tracking-[0.2em] mb-2 pl-0.5">{stat.label}</p>
+                  {stat.isPeak ? (
+                    renderPeakHour(stat.value)
+                  ) : (
+                    <p className={`text-3xl font-black font-mono tracking-tight leading-none mt-1 ${stat.value === '0' || stat.value === '0.0%' ? 'text-on-surface/20' : 'text-on-surface'}`}>
+                      {stat.value}
+                    </p>
+                  )}
+                </div>
+
+                {!stat.isPeak && stat.trendData && (
+                  <div className="pb-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                    <Sparkline
+                      data={stat.trendData}
+                      color={stat.color.includes('text-error') ? '#ffb2b7' : '#4edea3'}
+                      width={80}
+                      height={25}
+                    />
+                  </div>
                 )}
               </div>
-
-              {!stat.isPeak && stat.trendData && (
-                <div className="pb-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                  <Sparkline
-                    data={stat.trendData}
-                    color={stat.color.includes('text-error') ? '#ffb2b7' : '#4edea3'}
-                    width={80}
-                    height={25}
-                  />
-                </div>
-              )}
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <div className="grid grid-cols-12 gap-6">
@@ -287,61 +329,74 @@ const Analytics = () => {
           </div>
 
           <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorSafe" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#4edea3" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#4edea3" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="colorViolations" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ffb2b7" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#ffb2b7" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2d3449" vertical={false} opacity={0.5} />
-                <XAxis
-                  dataKey="name"
-                  stroke="#c0c6d6"
-                  fontSize={10}
-                  tickLine={false}
-                  axisLine={false}
-                  dy={10}
-                  fontFamily="monospace"
-                />
-                <YAxis
-                  stroke="#c0c6d6"
-                  fontSize={10}
-                  tickLine={false}
-                  axisLine={false}
-                  dx={-10}
-                  fontFamily="monospace"
-                />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#171f33', border: '1px solid rgba(218, 226, 253, 0.1)', borderRadius: '4px' }}
-                  itemStyle={{ fontSize: '10px', textTransform: 'uppercase', fontFamily: 'monospace' }}
-                  labelStyle={{ color: '#c0c6d6', marginBottom: '8px', fontSize: '10px', fontWeight: 'bold' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="safe"
-                  name="Safe Persons"
-                  stackId="1"
-                  stroke="#4edea3"
-                  fillOpacity={1}
-                  fill="url(#colorSafe)"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="violations"
-                  name="Violations"
-                  stackId="1"
-                  stroke="#ffb2b7"
-                  fillOpacity={1}
-                  fill="url(#colorViolations)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {loading ? (
+              <div className="w-full h-full flex flex-col gap-4">
+                <Skeleton height="20px" width="40%" />
+                <Skeleton height="100%" />
+              </div>
+            ) : chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorSafe" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4edea3" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#4edea3" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorViolations" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ffb2b7" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#ffb2b7" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2d3449" vertical={false} opacity={0.5} />
+                  <XAxis
+                    dataKey="name"
+                    stroke="#c0c6d6"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    dy={10}
+                    fontFamily="monospace"
+                  />
+                  <YAxis
+                    stroke="#c0c6d6"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    dx={-10}
+                    fontFamily="monospace"
+                  />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#171f33', border: '1px solid rgba(218, 226, 253, 0.1)', borderRadius: '4px' }}
+                    itemStyle={{ fontSize: '10px', textTransform: 'uppercase', fontFamily: 'monospace' }}
+                    labelStyle={{ color: '#c0c6d6', marginBottom: '8px', fontSize: '10px', fontWeight: 'bold' }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="safe"
+                    name="Safe Persons"
+                    stackId="1"
+                    stroke="#4edea3"
+                    fillOpacity={1}
+                    fill="url(#colorSafe)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="violations"
+                    name="Violations"
+                    stackId="1"
+                    stroke="#ffb2b7"
+                    fillOpacity={1}
+                    fill="url(#colorViolations)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState 
+                title="No Trend Data" 
+                message="Adjust the range or wait for more detections to populate the chart." 
+                className="h-full"
+              />
+            )}
           </div>
         </div>
 
@@ -349,39 +404,57 @@ const Analytics = () => {
         <div className="col-span-12 lg:col-span-4 surface-1 border border-on-surface/5 p-6 rounded-md tech-glow flex flex-col h-[450px]">
           <h3 className="text-xs font-mono uppercase font-bold tracking-[0.2em] text-on-surface-variant mb-10">Compliance Integrity</h3>
           <div className="flex-1 flex flex-col items-center justify-center min-h-0">
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={65}
-                  outerRadius={85}
-                  paddingAngle={10}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#171f33', border: '1px solid rgba(218, 226, 253, 0.1)', borderRadius: '4px' }}
-                  itemStyle={{ fontSize: '10px', textTransform: 'uppercase', fontFamily: 'monospace' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-
-            <div className="w-full space-y-3 mt-8">
-              {pieData.map((item, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-surface-low/50 rounded border border-on-surface/5 group hover:border-primary/20 transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: item.color, color: item.color }}></div>
-                    <span className="text-[10px] font-mono text-on-surface-variant group-hover:text-on-surface uppercase tracking-widest">{item.name}</span>
-                  </div>
-                  <span className="text-xs font-bold font-mono text-on-surface">{item.value} {item.name !== 'No Data'}</span>
+            {loading ? (
+              <div className="w-full flex flex-col items-center gap-6">
+                <Skeleton width="180px" height="180px" rounded="rounded-full" />
+                <div className="w-full space-y-3">
+                  <Skeleton height="40px" />
+                  <Skeleton height="40px" />
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : summary && summary.total_detections > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={65}
+                      outerRadius={85}
+                      paddingAngle={10}
+                      dataKey="value"
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#171f33', border: '1px solid rgba(218, 226, 253, 0.1)', borderRadius: '4px' }}
+                      itemStyle={{ fontSize: '10px', textTransform: 'uppercase', fontFamily: 'monospace' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+
+                <div className="w-full space-y-3 mt-8">
+                  {pieData.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-surface-low/50 rounded border border-on-surface/5 group hover:border-primary/20 transition-all">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: item.color, color: item.color }}></div>
+                        <span className="text-[10px] font-mono text-on-surface-variant group-hover:text-on-surface uppercase tracking-widest">{item.name}</span>
+                      </div>
+                      <span className="text-xs font-bold font-mono text-on-surface">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <EmptyState 
+                icon={Activity}
+                title="Integrity Check" 
+                message="No detections recorded for the selected period."
+              />
+            )}
           </div>
         </div>
       </div>

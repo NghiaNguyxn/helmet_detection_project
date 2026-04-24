@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Search, 
-  Filter, 
-  Download, 
-  ExternalLink, 
-  ShieldAlert, 
-  Calendar, 
-  Trash2, 
-  ChevronLeft, 
-  ChevronRight, 
+import {
+  Search,
+  Filter,
+  Download,
+  ExternalLink,
+  ShieldAlert,
+  Calendar,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
   X,
   FileSpreadsheet,
   AlertCircle,
@@ -17,27 +17,38 @@ import {
   Maximize2,
   MoreVertical,
   Plus,
-  Minus
+  Minus,
+  AlertTriangle
 } from 'lucide-react';
 import api from '../services/api';
+import socketService from '../services/websocket';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import CustomDropdown from '../components/CustomDropdown';
+import Skeleton from '../components/Skeleton';
+import EmptyState from '../components/EmptyState';
+import { useSearchParams } from 'react-router-dom';
 
 const ViolationHistory = () => {
   const { user: currentUser } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlHighlightId = searchParams.get('id');
+
   const [violations, setViolations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [total, setTotal] = useState(0);
-  
+
+  // Highlight state
+  const [activeHighlightId, setActiveHighlightId] = useState(null);
+
   // Filter States
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [minViolations, setMinViolations] = useState(0);
   const [onlyViolations, setOnlyViolations] = useState(true);
-  
+
   // Sorting States
   const [sortBy, setSortBy] = useState('timestamp');
   const [order, setOrder] = useState('desc');
@@ -46,6 +57,7 @@ const ViolationHistory = () => {
   const [selectedViolationIndex, setSelectedViolationIndex] = useState(null);
   const [isDeleting, setIsDeleting] = useState(null);
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -58,9 +70,79 @@ const ViolationHistory = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Sync URL ID to state
+  useEffect(() => {
+    if (urlHighlightId) {
+      setActiveHighlightId(urlHighlightId);
+    }
+  }, [urlHighlightId]);
+
+  // Global click listener to clear highlight
+  useEffect(() => {
+    const handleGlobalClick = (e) => {
+      // Tìm xem click có nằm trong thumbnail hoặc modal không
+      const isThumbnail = e.target.closest('.evidence-thumbnail');
+      const isModal = e.target.closest('.violation-modal-content');
+      const isDeleteModal = e.target.closest('.delete-modal-content');
+
+      if (!isThumbnail && !isModal && !isDeleteModal) {
+        setActiveHighlightId(null);
+        if (urlHighlightId) setSearchParams({});
+      }
+    };
+    document.addEventListener('mousedown', handleGlobalClick);
+    return () => document.removeEventListener('mousedown', handleGlobalClick);
+  }, [urlHighlightId, setSearchParams]);
+
   useEffect(() => {
     fetchViolations();
   }, [page, limit, sortBy, order]);
+
+  // Real-time updates from WebSocket
+  useEffect(() => {
+    const unsubscribe = socketService.subscribe((message) => {
+      if (message.event === 'new_violation') {
+        const newViolation = message.data;
+
+        // Only prepend if we are on the first page and no specific date filters are active
+        // Or simply always prepend to show "Live" updates
+        if (page === 1) {
+          setViolations(prev => {
+            // Check if already exists to avoid duplicates
+            if (prev.some(v => (v.id || v._id) === (newViolation.id || newViolation._id))) return prev;
+            return [newViolation, ...prev.slice(0, limit - 1)];
+          });
+          setTotal(prev => prev + 1);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [page, limit]);
+
+  // Auto-scroll and open modal for highlighted item
+  useEffect(() => {
+    if (activeHighlightId && violations.length > 0) {
+      const index = violations.findIndex(v => {
+        const id = v.id || v._id;
+        return String(id) === String(activeHighlightId);
+      });
+
+      if (index !== -1) {
+        // Chỉ tự động mở modal nếu là từ URL (thông báo mới)
+        if (urlHighlightId === activeHighlightId && selectedViolationIndex === null) {
+          setSelectedViolationIndex(index);
+        }
+
+        setTimeout(() => {
+          const element = document.getElementById(`violation-${activeHighlightId}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 500);
+      }
+    }
+  }, [activeHighlightId, violations, loading, urlHighlightId]);
 
   const fetchViolations = async () => {
     setLoading(true);
@@ -71,7 +153,7 @@ const ViolationHistory = () => {
         sort_by: sortBy,
         order
       });
-      
+
       if (startDate) params.append('start_date', new Date(startDate).toISOString());
       if (endDate) params.append('end_date', new Date(endDate).toISOString());
       if (minViolations > 0) params.append('min_violations', minViolations);
@@ -102,8 +184,6 @@ const ViolationHistory = () => {
     setMinViolations(0);
     setOnlyViolations(true);
     setPage(1);
-    // fetch will be triggered by useEffect if any states changed, 
-    // but better call it manually or wait for state reset
     setTimeout(() => fetchViolations(), 0);
   };
 
@@ -118,7 +198,7 @@ const ViolationHistory = () => {
       const response = await api.get(`/violations/export?${params.toString()}`, {
         responseType: 'blob'
       });
-      
+
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -134,8 +214,6 @@ const ViolationHistory = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this record?')) return;
-    
     setIsDeleting(id);
     try {
       const response = await api.delete(`/violations/${id}`);
@@ -147,6 +225,7 @@ const ViolationHistory = () => {
       toast.error('Could not delete record');
     } finally {
       setIsDeleting(null);
+      setDeleteConfirmId(null);
     }
   };
 
@@ -184,7 +263,7 @@ const ViolationHistory = () => {
           </p>
         </div>
 
-        <button 
+        <button
           onClick={handleExportExcel}
           className="flex items-center gap-2 px-6 py-2.5 bg-secondary text-background font-bold rounded-md text-[10px] hover:bg-secondary/90 transition-all uppercase tracking-[0.15em] shadow-[0_0_15px_rgba(var(--secondary-rgb),0.3)] shrink-0 ml-auto"
         >
@@ -198,16 +277,16 @@ const ViolationHistory = () => {
           <div className="space-y-1.5 flex-1 min-w-[180px]">
             <label className="text-[9px] font-mono uppercase text-on-surface-variant tracking-widest pl-1">Date Range</label>
             <div className="flex items-center gap-2">
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="flex-1 bg-surface border border-on-surface/10 rounded px-3 py-2 text-[10px] font-mono text-on-surface outline-none focus:border-primary/50 transition-all cursor-pointer"
                 style={{ colorScheme: 'dark' }}
               />
               <span className="text-on-surface/30">—</span>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 className="flex-1 bg-surface border border-on-surface/10 rounded px-3 py-2 text-[10px] font-mono text-on-surface outline-none focus:border-primary/50 transition-all cursor-pointer"
@@ -219,23 +298,23 @@ const ViolationHistory = () => {
           <div className="space-y-1.5 w-40">
             <label className="text-[9px] font-mono uppercase text-on-surface-variant tracking-widest pl-1">Min Violations</label>
             <div className="custom-number-input">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setMinViolations(Math.max(0, minViolations - 1))}
                 className="custom-number-btn"
               >
                 <Minus className="w-3 h-3" />
               </button>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 min="0"
                 value={minViolations}
                 onChange={(e) => setMinViolations(Math.max(0, parseInt(e.target.value) || 0))}
                 placeholder="0"
                 className="text-center"
               />
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setMinViolations(minViolations + 1)}
                 className="custom-number-btn"
               >
@@ -246,15 +325,15 @@ const ViolationHistory = () => {
 
           <div className="flex items-center gap-2 py-2 px-2">
             <div className="relative flex items-center justify-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 id="onlyViolations"
                 checked={onlyViolations}
                 onChange={(e) => setOnlyViolations(e.target.checked)}
                 className="w-4 h-4 rounded appearance-none border border-on-surface/30 bg-surface checked:bg-primary checked:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer transition-colors peer"
               />
               <svg className="w-3 h-3 text-background absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11.6666 3.5L5.24992 9.91667L2.33325 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M11.6666 3.5L5.24992 9.91667L2.33325 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <label htmlFor="onlyViolations" className="text-[10px] font-mono uppercase text-on-surface-variant tracking-widest cursor-pointer select-none">
@@ -263,14 +342,14 @@ const ViolationHistory = () => {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
-            <button 
+            <button
               type="button"
               onClick={handleResetFilter}
               className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant hover:text-on-surface transition-all"
             >
               Clear
             </button>
-            <button 
+            <button
               type="submit"
               className="flex items-center gap-2 px-6 py-2 bg-surface-highest text-on-surface border border-on-surface/10 rounded-md text-[10px] font-bold uppercase tracking-widest hover:border-primary/50 transition-all"
             >
@@ -280,14 +359,13 @@ const ViolationHistory = () => {
         </form>
       </div>
 
-      {/* Main Table - Fixed overflow and added min-height to prevent clipping dropdowns */}
       <div className="surface-1 border border-on-surface/5 rounded-md overflow-visible tech-glow min-h-[500px]">
         <div className="overflow-x-auto lg:overflow-visible rounded-md">
           <table className="w-full text-left border-collapse">
             <thead className="bg-surface-low text-on-surface-variant text-[10px] font-mono uppercase tracking-widest border-b border-on-surface/5">
               <tr>
                 <th className="px-6 py-5 font-bold">Evidence</th>
-                <th 
+                <th
                   className="px-6 py-5 font-bold cursor-pointer hover:text-primary transition-colors"
                   onClick={() => toggleSort('timestamp')}
                 >
@@ -295,7 +373,7 @@ const ViolationHistory = () => {
                     Timestamp {sortBy === 'timestamp' && (order === 'asc' ? '↑' : '↓')}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-6 py-5 font-bold cursor-pointer hover:text-primary transition-colors"
                   onClick={() => toggleSort('total_violations')}
                 >
@@ -309,21 +387,31 @@ const ViolationHistory = () => {
             </thead>
             <tbody className="divide-y divide-on-surface/5">
               {loading ? (
-                <tr>
-                  <td colSpan="5" className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="w-10 h-10 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-                      <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-[0.3em]">Loading records...</span>
-                    </div>
-                  </td>
-                </tr>
+                Array(limit).fill(0).map((_, i) => (
+                  <tr key={i} className="border-b border-on-surface/5">
+                    <td className="px-6 py-4"><Skeleton width="80px" height="48px" /></td>
+                    <td className="px-6 py-4">
+                      <Skeleton width="100px" height="12px" className="mb-2" />
+                      <Skeleton width="60px" height="10px" />
+                    </td>
+                    <td className="px-6 py-4"><Skeleton width="90px" height="24px" /></td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <Skeleton width="96px" height="4px" />
+                        <Skeleton width="30px" height="10px" />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right"><Skeleton width="32px" height="32px" className="inline-block" rounded="rounded-md" /></td>
+                  </tr>
+                ))
               ) : violations.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center gap-4 opacity-30">
-                      <LayoutGrid className="w-12 h-12" />
-                      <span className="text-xs font-mono uppercase tracking-[0.3em]">No violations found</span>
-                    </div>
+                  <td colSpan="5" className="px-6 py-12 text-center">
+                    <EmptyState
+                      icon={AlertCircle}
+                      title="No violations found"
+                      message="Try adjusting your filters or checking a different date range."
+                    />
                   </td>
                 </tr>
               ) : (
@@ -332,16 +420,27 @@ const ViolationHistory = () => {
                     ? violation.detections.reduce((acc, d) => acc + d.confidence, 0) / violation.detections.length
                     : 0;
 
+                  const vId = violation.id || violation._id;
+                  const isHighlighted = activeHighlightId === vId;
+
                   return (
-                    <tr key={violation.id} className="hover:bg-primary/5 transition-all group">
+                    <tr
+                      key={vId}
+                      id={`violation-${vId}`}
+                      className={`hover:bg-primary/5 transition-all group ${isHighlighted ? 'row-highlight' : ''}`}
+                    >
                       <td className="px-6 py-4">
-                        <div 
-                          className="relative w-20 h-12 rounded bg-surface border border-on-surface/10 overflow-hidden cursor-zoom-in group/img"
-                          onClick={() => setSelectedViolationIndex(violations.indexOf(violation))}
+                        <div
+                          className="evidence-thumbnail relative w-20 h-12 rounded bg-surface border border-on-surface/10 overflow-hidden cursor-zoom-in group/img"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedViolationIndex(violations.indexOf(violation));
+                            setActiveHighlightId(vId);
+                          }}
                         >
-                          <img 
-                            src={violation.image_url} 
-                            alt="evidence" 
+                          <img
+                            src={violation.image_url}
+                            alt="evidence"
                             className="w-full h-full object-cover group-hover/img:scale-110 transition-transform duration-500"
                           />
                           <div className="absolute inset-0 bg-primary/0 group-hover/img:bg-primary/10 flex items-center justify-center transition-all opacity-0 group-hover/img:opacity-100">
@@ -361,21 +460,19 @@ const ViolationHistory = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-widest border ${
-                          violation.total_violations > 0 
-                          ? 'bg-error/10 text-error border-error/20' 
-                          : 'bg-secondary/10 text-secondary border-secondary/20'
-                        }`}>
+                        <span className={`px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-widest border ${violation.total_violations > 0
+                            ? 'bg-error/10 text-error border-error/20'
+                            : 'bg-secondary/10 text-secondary border-secondary/20'
+                          }`}>
                           {violation.total_violations} {violation.total_violations > 1 ? 'Violators' : 'Violator'}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-24 h-1 bg-surface-highest rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full transition-all duration-1000 ${
-                                avgConfidence > 0.8 ? 'bg-secondary' : avgConfidence > 0.5 ? 'bg-primary' : 'bg-error'
-                              }`}
+                            <div
+                              className={`h-full transition-all duration-1000 ${avgConfidence > 0.8 ? 'bg-secondary' : avgConfidence > 0.5 ? 'bg-primary' : 'bg-error'
+                                }`}
                               style={{ width: `${avgConfidence * 100}%` }}
                             ></div>
                           </div>
@@ -385,23 +482,23 @@ const ViolationHistory = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right relative overflow-visible">
-                        <div className="inline-block" ref={activeMenuId === violation.id ? menuRef : null}>
-                          <button 
-                            onClick={() => setActiveMenuId(activeMenuId === violation.id ? null : violation.id)}
+                        <div className="inline-block" ref={activeMenuId === vId ? menuRef : null}>
+                          <button
+                            onClick={() => setActiveMenuId(activeMenuId === vId ? null : vId)}
                             className="p-2.5 text-on-surface-variant hover:text-on-surface hover:bg-surface rounded-md transition-all border border-transparent hover:border-on-surface/10"
                           >
                             <MoreVertical className="w-4 h-4" />
                           </button>
 
-                          {activeMenuId === violation.id && (
+                          {activeMenuId === vId && (
                             <div className="absolute right-0 top-14 w-48 surface-2 border border-on-surface/10 rounded-md shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                               <div className="px-4 py-2 bg-surface-low border-b border-on-surface/5">
                                 <span className="text-[8px] font-mono text-on-surface-variant uppercase tracking-widest opacity-50">Actions</span>
                               </div>
-                              
-                              <a 
-                                href={violation.image_url} 
-                                download 
+
+                              <a
+                                href={violation.image_url}
+                                download
                                 className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-bold uppercase font-mono text-on-surface hover:bg-primary/10 hover:text-primary transition-all text-left"
                                 onClick={() => setActiveMenuId(null)}
                               >
@@ -410,16 +507,15 @@ const ViolationHistory = () => {
                               </a>
 
                               {currentUser?.role === 'admin' && (
-                                <button 
+                                <button
                                   onClick={() => {
-                                    handleDelete(violation.id);
+                                    setDeleteConfirmId(vId);
                                     setActiveMenuId(null);
                                   }}
-                                  disabled={isDeleting === violation.id}
-                                  className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-bold uppercase font-mono text-error hover:bg-error/10 transition-all text-left disabled:opacity-30"
+                                  className="w-full flex items-center justify-between px-4 py-3 text-[10px] font-bold uppercase font-mono text-error hover:bg-error/10 transition-all text-left border-t border-on-surface/5"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
                                   <span>Delete</span>
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
                             </div>
@@ -440,7 +536,7 @@ const ViolationHistory = () => {
             <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-[0.2em] opacity-60">
               Records Display:
             </span>
-            <CustomDropdown 
+            <CustomDropdown
               options={[
                 { value: 10, label: '10 Records' },
                 { value: 25, label: '25 Records' },
@@ -460,31 +556,30 @@ const ViolationHistory = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <button 
+            <button
               onClick={() => setPage(Math.max(1, page - 1))}
               disabled={page === 1}
               className="p-2 border border-on-surface/10 rounded-md hover:bg-surface transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            
+
             <div className="flex items-center gap-1 mx-2">
               {[...Array(Math.ceil(total / limit))].map((_, i) => {
                 const pNum = i + 1;
                 if (
-                  pNum === 1 || 
-                  pNum === Math.ceil(total / limit) || 
+                  pNum === 1 ||
+                  pNum === Math.ceil(total / limit) ||
                   (pNum >= page - 1 && pNum <= page + 1)
                 ) {
                   return (
-                    <button 
+                    <button
                       key={pNum}
                       onClick={() => setPage(pNum)}
-                      className={`w-8 h-8 rounded text-[10px] font-bold transition-all ${
-                        page === pNum 
-                        ? 'bg-primary text-background shadow-lg shadow-primary/20' 
-                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface'
-                      }`}
+                      className={`w-8 h-8 rounded text-[10px] font-bold transition-all ${page === pNum
+                          ? 'bg-primary text-background shadow-lg shadow-primary/20'
+                          : 'text-on-surface-variant hover:text-on-surface hover:bg-surface'
+                        }`}
                     >
                       {pNum}
                     </button>
@@ -497,7 +592,7 @@ const ViolationHistory = () => {
               })}
             </div>
 
-            <button 
+            <button
               onClick={() => setPage(Math.min(Math.ceil(total / limit), page + 1))}
               disabled={page >= Math.ceil(total / limit)}
               className="p-2 border border-on-surface/10 rounded-md hover:bg-surface transition-all disabled:opacity-30 disabled:cursor-not-allowed"
@@ -512,34 +607,34 @@ const ViolationHistory = () => {
       {selectedViolationIndex !== null && violations[selectedViolationIndex] && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-200">
           <div className="absolute inset-0 bg-background/95 backdrop-blur-xl" onClick={() => setSelectedViolationIndex(null)}></div>
-          
-          <div className="relative max-w-full max-h-full flex flex-col items-center">
+
+          <div className="violation-modal-content relative max-w-full max-h-full flex flex-col items-center">
             {/* Nav Arrows */}
             <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none px-4 md:-mx-20">
-                <button 
-                  onClick={handlePrevImage}
-                  className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-md border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto shadow-2xl"
-                >
-                    <ChevronLeft className="w-6 h-6" />
-                </button>
-                <button 
-                  onClick={handleNextImage}
-                  className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-md border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto shadow-2xl"
-                >
-                    <ChevronRight className="w-6 h-6" />
-                </button>
+              <button
+                onClick={handlePrevImage}
+                className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-md border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto shadow-2xl"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                onClick={handleNextImage}
+                className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-md border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto shadow-2xl"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
             </div>
 
-            <button 
+            <button
               onClick={() => setSelectedViolationIndex(null)}
               className="absolute -top-12 right-0 p-2 text-on-surface-variant hover:text-on-surface transition-all flex items-center gap-2 text-[10px] font-mono tracking-widest uppercase cursor-pointer"
             >
               Close <X className="w-5 h-5" />
             </button>
             <div className="surface-1 border border-primary/20 p-1 rounded-md shadow-[0_0_50px_rgba(var(--primary-rgb),0.2)] relative overflow-hidden group">
-              <img 
-                src={violations[selectedViolationIndex].image_url} 
-                alt="Full Evidence" 
+              <img
+                src={violations[selectedViolationIndex].image_url}
+                alt="Full Evidence"
                 className="max-w-full max-h-[80vh] object-contain rounded"
               />
               <div className="absolute top-0 left-0 w-full p-4 flex justify-between pointer-events-none">
@@ -552,26 +647,60 @@ const ViolationHistory = () => {
               {/* Details Overlay */}
               <div className="absolute bottom-4 left-4 right-4 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
                 <div className="bg-background/80 backdrop-blur-xl border border-on-surface/10 p-4 rounded-md shadow-2xl flex justify-between items-center">
-                    <div>
-                        <p className="text-[10px] font-mono text-primary font-bold uppercase tracking-widest mb-1">TIMESTAMP</p>
-                        <p className="text-xs font-bold text-on-surface">{new Date(violations[selectedViolationIndex].timestamp).toLocaleString()}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-[10px] font-mono text-error font-bold uppercase tracking-widest mb-1">TOTAL VIOLATIONS</p>
-                        <p className="text-xs font-bold text-error">{violations[selectedViolationIndex].total_violations}</p>
-                    </div>
+                  <div>
+                    <p className="text-[10px] font-mono text-primary font-bold uppercase tracking-widest mb-1">TIMESTAMP</p>
+                    <p className="text-xs font-bold text-on-surface">{new Date(violations[selectedViolationIndex].timestamp).toLocaleString()}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-mono text-error font-bold uppercase tracking-widest mb-1">TOTAL VIOLATIONS</p>
+                    <p className="text-xs font-bold text-error">{violations[selectedViolationIndex].total_violations}</p>
+                  </div>
                 </div>
               </div>
             </div>
 
             <div className="mt-6 flex gap-4">
-               <a 
+              <a
                 href={violations[selectedViolationIndex].image_url}
                 download
                 className="flex items-center gap-2 px-8 py-3 bg-primary text-background font-bold rounded-md text-[10px] hover:bg-primary/90 transition-all uppercase tracking-[0.2em] shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)] cursor-pointer"
-               >
-                 <Download className="w-4 h-4" /> Save Record Image
-               </a>
+              >
+                <Download className="w-4 h-4" /> Save Record Image
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/90 backdrop-blur-md" onClick={() => setDeleteConfirmId(null)}></div>
+          <div className="delete-modal-content relative w-full max-w-sm surface-1 border border-error/20 rounded-lg p-8 tech-glow animate-in zoom-in-95 duration-200 text-center">
+            <div className="w-16 h-16 bg-error/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-error/20">
+              <AlertTriangle className="w-8 h-8 text-error" />
+            </div>
+            <h2 className="text-xl font-bold text-on-surface uppercase font-mono tracking-widest">Delete Record</h2>
+            <p className="text-[10px] text-on-surface-variant font-mono uppercase tracking-widest mt-1">Confirm deletion</p>
+            <p className="text-sm text-on-surface-variant my-8 leading-relaxed">
+              Are you sure you want to delete this violation record? This action cannot be undone.
+            </p>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setDeleteConfirmId(null)}
+                className="flex-1 py-3 bg-surface border border-on-surface/10 text-on-surface-variant font-bold uppercase tracking-widest text-[10px] rounded-md hover:border-on-surface/20 transition-all"
+              >
+                Abort
+              </button>
+              <button
+                onClick={() => handleDelete(deleteConfirmId)}
+                className="flex-1 py-3 bg-error text-background font-bold uppercase tracking-widest text-[10px] rounded-md primary-glow hover:bg-error/90 transition-all flex items-center justify-center gap-2"
+              >
+                {isDeleting === deleteConfirmId ? (
+                  <span className="w-4 h-4 border-2 border-background/30 border-t-background rounded-full animate-spin"></span>
+                ) : null}
+                Confirm Delete
+              </button>
             </div>
           </div>
         </div>
@@ -579,6 +708,18 @@ const ViolationHistory = () => {
 
       {/* Global Style fixes */}
       <style>{`
+        @keyframes highlight-pulse {
+          0% { background-color: transparent; }
+          50% { background-color: #3b82f633; border-top-color: #3b82f6; border-bottom-color: #3b82f6; }
+          100% { background-color: transparent; }
+        }
+        .row-highlight {
+          animation: highlight-pulse 2s ease-in-out infinite;
+          background-color: #3b82f61a !important;
+          box-shadow: inset 0 0 10px #3b82f633;
+          position: relative;
+          z-index: 5;
+        }
         input[type="date"]::-webkit-calendar-picker-indicator {
           opacity: 0.8;
           cursor: pointer;

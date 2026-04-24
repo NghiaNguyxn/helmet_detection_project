@@ -4,12 +4,13 @@ from ultralytics import YOLO
 import cv2
 import numpy as np
 import base64
-import time
+import asyncio
 
 from SourceCode.BE.app.schemas.helmet_schema import PredictResponse
 from SourceCode.BE.app.core.config import setting
+from SourceCode.BE.app.core.websocket_manager import manager
 from SourceCode.BE.app.exceptions.helmet import ImageDecodingError
-from SourceCode.BE.app.services.violation_services import save_violation_backtask
+from SourceCode.BE.app.services.violation_service import save_violation_backtask
 from SourceCode.BE.app.utils.drawing import annotated_helmet_frame
 
 async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection, background_tasks: BackgroundTasks) -> PredictResponse:
@@ -33,7 +34,9 @@ async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection
         img, 
         imgsz=416, 
         conf=setting.VIOLATION_THRESHOLD, 
-        verbose=False
+        verbose=False,
+        device=0,
+        half=True
     )
     
     # 2. Vẽ bounding box và đếm số lượng vi phạm
@@ -41,7 +44,15 @@ async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection
 
     # 3. Logic lưu Database (Chỉ lưu khi có vi phạm và hết Cooldown)
     if(violation_count > 0):
-        background_tasks.add_task(save_violation_backtask, annotated_frame, violation_count, all_detections, db_collection)
+        asyncio.create_task(
+            save_violation_backtask(
+                annotated_frame.copy(), 
+                violation_count, 
+                all_detections, 
+                db_collection,
+                manager
+            )
+        )
         
     # 4. Trả về tất cả detections (bao gồm cả người đội mũ và không đội mũ)
     _, buffer = cv2.imencode(".jpg", annotated_frame)

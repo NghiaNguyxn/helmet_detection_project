@@ -38,7 +38,7 @@ async def get_summary_report(
 async def get_trend_report(
     start_date: date = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: date = Query(..., description="End date (YYYY-MM-DD)"),
-    granularity: str = Query("day", regex="^(day|hour)$", description="day or hour"),
+    granularity: str = Query("day", pattern="^(day|hour)$", description="day or hour"),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection)
 ):
     """Trend data for plotting charts (line/bar)"""

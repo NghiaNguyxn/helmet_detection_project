@@ -1,4 +1,8 @@
 from fastapi import UploadFile
+import logging
+
+logger = logging.getLogger(__name__)
+
 from sqlmodel import Session, select, or_
 from sqlalchemy.exc import IntegrityError
 
@@ -175,7 +179,7 @@ def create_initial_admin(session: Session):
     if get_user_by_username(session, username) or get_user_by_email(session, email):
         return
     
-    print("Creating initial admin account...")
+    logger.info("Creating initial admin account...")
     
     hashed_pw = security.get_password_hash(password)
 

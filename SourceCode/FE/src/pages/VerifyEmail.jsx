@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Shield, CheckCircle, XCircle, Loader2, ArrowRight, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import api from '../services/api';
+import api, { API_BASE_URL } from '../services/api';
 
 const VerifyEmail = () => {
   const [searchParams] = useSearchParams();
@@ -88,8 +88,8 @@ const VerifyEmail = () => {
         <div className="surface-1 border border-on-surface/5 p-10 rounded-md tech-glow">
           {/* Logo */}
           <div className="flex flex-col items-center mb-8">
-            <div className="p-3 bg-primary/10 rounded-xl mb-4 border border-primary/20">
-              <Shield className="w-8 h-8 text-primary" />
+            <div className="p-2 mb-4 overflow-hidden">
+              <img src="/ptit-logo.png" alt="Logo" className="w-16 h-16 object-contain" />
             </div>
             <h1 className="text-xl font-bold text-on-surface tracking-tight uppercase">Account Verification</h1>
           </div>

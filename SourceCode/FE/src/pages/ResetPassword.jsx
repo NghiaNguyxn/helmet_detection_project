@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Shield, Lock, Eye, EyeOff, CheckCircle, Loader2, AlertTriangle, ArrowRight, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import api from '../services/api';
+import api, { API_BASE_URL } from '../services/api';
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
@@ -90,8 +90,8 @@ const ResetPassword = () => {
         <div className="surface-1 border border-on-surface/5 p-8 rounded-md tech-glow">
           {/* Header */}
           <div className="flex flex-col items-center mb-8">
-            <div className="p-3 bg-primary/10 rounded-xl mb-4 border border-primary/20">
-              <Shield className="w-8 h-8 text-primary" />
+            <div className="p-2 mb-4 overflow-hidden">
+              <img src="/ptit-logo.png" alt="Logo" className="w-16 h-16 object-contain" />
             </div>
             <h1 className="text-xl font-bold text-on-surface tracking-tight uppercase">Reset Password</h1>
             <p className="text-on-surface-variant text-[10px] font-mono uppercase tracking-[0.2em] mt-2 opacity-70">

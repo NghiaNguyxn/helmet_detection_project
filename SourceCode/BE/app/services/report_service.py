@@ -77,11 +77,9 @@ async def get_summary_report(
     # Calculate Peak Hour
     peak_hour_str = "None"
     if hourly_results:
-        # Find entry with max count
         peak_entry = max(hourly_results, key=lambda x: x["count"])
         h = peak_entry["_id"]
         cnt = peak_entry["count"]
-        # Format: HH:00 AM/PM (X people)
         period = "AM" if h < 12 else "PM"
         hour_12 = h % 12
         if hour_12 == 0: hour_12 = 12
@@ -104,7 +102,7 @@ async def get_trend_report(
         end_date: date,
         granularity: str = "day"
     ) -> TrendReportResponse: 
-    """Trend data for charts"""
+    """Trend data for charts with Real Accuracy"""
 
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.max.time())
@@ -112,7 +110,8 @@ async def get_trend_report(
     base_project = {
         "timestamp": 1,
         "total_violations": 1,
-        "detections_count": {"$size": {"$ifNull": ["$detections", []]}}
+        "detections_count": {"$size": {"$ifNull": ["$detections", []]}},
+        "avg_conf": {"$avg": "$detections.confidence"}
     }
 
     if granularity == "day":
@@ -122,7 +121,8 @@ async def get_trend_report(
             {"$group": {
                 "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
                 "violations": {"$sum": "$total_violations"},
-                "detections": {"$sum": "$detections_count"}
+                "detections": {"$sum": "$detections_count"},
+                "accuracy": {"$avg": "$avg_conf"}
             }},
             {"$sort": {"_id": 1}}
         ]
@@ -130,8 +130,10 @@ async def get_trend_report(
         cursor = collection.aggregate(pipeline)
         results = await cursor.to_list(length=None)
         labels = [item["_id"] for item in results]
-        violations_data = [item.get("violations", 0) for item in results]
-        compliance_data = [max(0, item.get("detections", 0) - item.get("violations", 0)) for item in results]
+        violations_data = [float(item.get("violations", 0)) for item in results]
+        compliance_data = [float(max(0, item.get("detections", 0) - item.get("violations", 0))) for item in results]
+        # Chuyển đổi confidence (0-1) sang percentage (0-100)
+        accuracy_data = [round(float(item.get("accuracy", 0) or 1.0) * 100, 1) for item in results]
 
     else: # hour
         pipeline = [
@@ -140,7 +142,8 @@ async def get_trend_report(
             {"$group": {
                 "_id": {"$hour": "$timestamp"},
                 "violations": {"$sum": "$total_violations"},
-                "detections": {"$sum": "$detections_count"}
+                "detections": {"$sum": "$detections_count"},
+                "accuracy": {"$avg": "$avg_conf"}
             }},
             {"$sort": {"_id": 1}}
         ]
@@ -149,12 +152,18 @@ async def get_trend_report(
         results = await cursor.to_list(length=None)
         v_by_hour = {item["_id"]: item.get("violations", 0) for item in results}
         d_by_hour = {item["_id"]: item.get("detections", 0) for item in results}
+        a_by_hour = {item["_id"]: item.get("accuracy", 1.0) for item in results}
         
         labels = [str(h) for h in range(24)]
-        violations_data = [v_by_hour.get(h, 0) for h in range(24)]
-        compliance_data = [max(0, d_by_hour.get(h, 0) - v_by_hour.get(h, 0)) for h in range(24)]
+        violations_data = [float(v_by_hour.get(h, 0)) for h in range(24)]
+        compliance_data = [float(max(0, d_by_hour.get(h, 0) - v_by_hour.get(h, 0))) for h in range(24)]
+        accuracy_data = [round(float(a_by_hour.get(h, 1.0) or 1.0) * 100, 1) for h in range(24)]
 
     return TrendReportResponse(
         labels=labels,
-        datasets={"violations": violations_data, "compliance": compliance_data}
+        datasets={
+            "violations": violations_data, 
+            "compliance": compliance_data,
+            "accuracy": accuracy_data
+        }
     )

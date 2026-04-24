@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import Skeleton from '../components/Skeleton';
+import EmptyState from '../components/EmptyState';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
@@ -281,19 +283,35 @@ const UserManagement = () => {
             </thead>
             <tbody className="divide-y divide-on-surface/5">
               {loading ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
-                    <span className="text-xs font-mono text-on-surface-variant uppercase tracking-[0.2em]">Loading...</span>
-                  </td>
-                </tr>
+                Array(5).fill(0).map((_, i) => (
+                  <tr key={i} className="border-b border-on-surface/5">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <Skeleton width="48px" height="48px" rounded="rounded" />
+                        <div>
+                          <Skeleton width="120px" height="14px" className="mb-2" />
+                          <Skeleton width="60px" height="10px" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <Skeleton width="100px" height="14px" className="mb-2" />
+                      <Skeleton width="150px" height="10px" />
+                    </td>
+                    <td className="px-6 py-5"><Skeleton width="60px" height="20px" /></td>
+                    <td className="px-6 py-5"><Skeleton width="80px" height="16px" /></td>
+                    <td className="px-6 py-5"><Skeleton width="70px" height="16px" /></td>
+                    <td className="px-6 py-5 text-right"><Skeleton width="32px" height="32px" className="inline-block" rounded="rounded-md" /></td>
+                  </tr>
+                ))
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center gap-4 opacity-30">
-                      <Filter className="w-12 h-12" />
-                      <span className="text-xs font-mono uppercase tracking-[0.3em]">No users found</span>
-                    </div>
+                  <td colSpan="6" className="px-6 py-12 text-center">
+                    <EmptyState 
+                      icon={Search}
+                      title="No users found"
+                      message="No accounts match your current search or filter parameters."
+                    />
                   </td>
                 </tr>
               ) : (

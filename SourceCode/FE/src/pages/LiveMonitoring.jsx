@@ -1,22 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Camera, AlertCircle, CheckCircle, Shield, 
+import {
+  Camera, AlertCircle, CheckCircle, Shield,
   Maximize2, RefreshCcw, X, Download,
   ChevronLeft, ChevronRight, Activity, ShieldAlert, Target
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api, { API_BASE_URL } from '../services/api';
+import socketService from '../services/websocket';
 
 const LiveMonitoring = () => {
   // Persist camera state to handle tab switching
   const [isCamOn, setIsCamOn] = useState(() => {
     return localStorage.getItem('helmet_cam_active') === 'true';
   });
-  
-  const [sessionTime, setSessionTime] = useState('00:00:00');
+
+  const [sessionTime, setSessionTime] = useState(() => {
+    return localStorage.getItem('helmet_session_time') || '00:00:00';
+  });
   const [recentLogs, setRecentLogs] = useState([]);
-  
+
   // Load initial stats
   const [sessionStats, setSessionStats] = useState(() => {
     const saved = localStorage.getItem('helmet_session_stats');
@@ -28,7 +31,7 @@ const LiveMonitoring = () => {
   });
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(null);
-  
+
   // Persisted processed IDs
   const processedLogsRef = useRef(new Set(
     JSON.parse(localStorage.getItem('helmet_processed_ids') || '[]')
@@ -51,25 +54,50 @@ const LiveMonitoring = () => {
     localStorage.setItem('helmet_processed_ids', JSON.stringify([...processedLogsRef.current]));
   }, [recentLogs]);
 
+  useEffect(() => {
+    localStorage.setItem('helmet_session_time', sessionTime);
+  }, [sessionTime]);
+
   const toggleCamera = () => {
     const nextState = !isCamOn;
-    
+
     // IF WE ARE TURNING IT ON -> Fresh start, reset everything logic
     if (nextState) {
-        localStorage.removeItem('helmet_session_start');
-        localStorage.setItem('helmet_session_start', Date.now().toString());
-        
-        // Clear all stats for the new session
-        setSessionStats({ violations: 0, securityLevel: 'Standard', accuracy: 0 });
-        processedLogsRef.current = new Set();
-        localStorage.setItem('helmet_processed_ids', '[]');
-        setSessionTime('00:00:00');
+      localStorage.removeItem('helmet_session_start');
+      localStorage.setItem('helmet_session_start', Date.now().toString());
+      localStorage.setItem('helmet_session_time', '00:00:00');
+
+      // Clear all stats for the new session
+      socketService.resetSessionStats(); // Reset the global service stats
+      setSessionStats({ violations: 0, securityLevel: 'Standard', accuracy: 0 });
+      processedLogsRef.current = new Set();
+      localStorage.setItem('helmet_processed_ids', '[]');
+      setSessionTime('00:00:00');
     } else {
-        // Turning OFF manually
-        api.post('/helmet/stop-video-feed').catch(err => console.warn('Stream stop error:', err));
+      // Turning OFF manually
+      api.post('/helmet/stop-video-feed').catch(err => console.warn('Stream stop error:', err));
     }
-    
+
     setIsCamOn(nextState);
+  };
+
+  const handleResetSession = () => {
+    // 1. Reset Global Service Stats
+      socketService.resetSessionStats();
+
+      // 2. Reset Start Time to NOW
+      const newStartTime = Date.now().toString();
+      localStorage.setItem('helmet_session_start', newStartTime);
+      
+      // 3. Reset Local State
+      setSessionStats({ violations: 0, securityLevel: 'Standard', accuracy: 0 });
+      setSessionTime('00:00:00');
+      
+      // 4. Reset Processed IDs
+      processedLogsRef.current = new Set();
+      localStorage.setItem('helmet_processed_ids', '[]');
+      
+      toast.success('Session reset successfully');
   };
 
   // Timer logic
@@ -82,13 +110,20 @@ const LiveMonitoring = () => {
         localStorage.setItem('helmet_session_start', startTime);
       }
 
-      interval = setInterval(() => {
+      const updateTime = () => {
+        const startTime = localStorage.getItem('helmet_session_start');
+        if (!startTime) return;
+        
         const diff = Math.floor((Date.now() - parseInt(startTime)) / 1000);
         const h = Math.floor(diff / 3600).toString().padStart(2, '0');
         const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
         const s = (diff % 60).toString().padStart(2, '0');
         setSessionTime(`${h}:${m}:${s}`);
-      }, 1000);
+      };
+
+      // Initial call to avoid flickers
+      updateTime();
+      interval = setInterval(updateTime, 1000);
     }
 
     return () => {
@@ -98,58 +133,98 @@ const LiveMonitoring = () => {
     };
   }, [isCamOn]);
 
-  // Periodic log fetching and stats calculation
+  // Helper to process new violations (used by both polling and WebSocket)
+  const processNewViolations = (logs) => {
+    if (!isCamOn) return;
+
+    const startTime = parseInt(localStorage.getItem('helmet_session_start') || '0');
+    let increment = 0;
+    let totalConf = 0;
+    let detCount = 0;
+
+    logs.forEach(log => {
+      const logId = log._id || log.id;
+      const logTime = new Date(log.timestamp).getTime();
+
+      // Count if violation happened after session start and not already processed
+      if (logId && logTime > startTime && !processedLogsRef.current.has(logId)) {
+        processedLogsRef.current.add(logId);
+        increment += 1;
+      }
+
+      // Include accuracy for detections in current session
+      if (logTime > startTime && log.detections && log.detections.length > 0) {
+        log.detections.forEach(d => {
+          totalConf += d.confidence;
+          detCount += 1;
+        });
+      }
+    });
+
+    if (increment > 0) {
+      setSessionStats(prev => ({ ...prev, violations: prev.violations + increment }));
+    }
+
+    if (detCount > 0) {
+      setSessionStats(prev => ({
+        ...prev,
+        accuracy: parseFloat(((totalConf / detCount) * 100).toFixed(1))
+      }));
+    }
+  };
+
+  // Log fetching (Initial only) and WebSocket subscription
   useEffect(() => {
-    const fetchLogs = async () => {
+    // 1. Initial fetch to populate the list
+    const initialFetch = async () => {
       try {
         const res = await api.get('/violations/?limit=3');
         if (res.data && res.data.code === 200 && res.data.result) {
-          const newLogs = res.data.result.data || [];
-          setRecentLogs(newLogs);
-          
-          if (isCamOn) {
-            let increment = 0;
-            let totalConf = 0;
-            let detCount = 0;
-            const startTime = parseInt(localStorage.getItem('helmet_session_start') || '0');
-
-            newLogs.forEach(log => {
-              const logId = log._id || log.id;
-              const logTime = new Date(log.timestamp).getTime();
-
-              // ONLY count if the violation happened AFTER the session started
-              if (logId && logTime > startTime && !processedLogsRef.current.has(logId)) {
-                processedLogsRef.current.add(logId);
-                increment += 1;
-              }
-
-              // Only include accuracy for detections in CURRENT session
-              if (logTime > startTime && log.detections && log.detections.length > 0) {
-                log.detections.forEach(d => {
-                  totalConf += d.confidence;
-                  detCount += 1;
-                });
-              }
-            });
-
-            if (increment > 0) {
-              setSessionStats(prev => ({ ...prev, violations: prev.violations + increment }));
-            }
-
-            if (detCount > 0) {
-              const avgAcc = (totalConf / detCount) * 100;
-              setSessionStats(prev => ({ ...prev, accuracy: parseFloat(avgAcc.toFixed(1)) }));
-            }
-          }
+          const logs = res.data.result.data || [];
+          setRecentLogs(logs);
         }
       } catch (e) {
-        console.error("Fetch status error:", e);
+        console.error("Initial fetch error:", e);
       }
     };
 
-    fetchLogs();
-    const intv = setInterval(fetchLogs, 4000);
-    return () => clearInterval(intv);
+    initialFetch();
+
+    // 2. WebSocket setup
+    socketService.connect();
+
+    const unsubscribe = socketService.subscribe((message) => {
+      if (message.event === 'new_violation') {
+        const newViolation = message.data;
+        console.log("New violation received via WebSocket:", newViolation);
+
+        // Update recent logs list
+        setRecentLogs(prev => {
+          // Avoid duplicates
+          if (prev.some(log => (log.id || log._id) === (newViolation.id || newViolation._id))) return prev;
+          return [newViolation, ...prev.slice(0, 4)];
+        });
+      }
+    });
+
+    // 3. Sync with persistent stats in socketService
+    const unsubscribeStatus = socketService.onStatusChange(() => {
+      const stats = socketService.sessionStats;
+      const accuracy = stats.totalDetections > 0 
+        ? parseFloat(((stats.totalConfidence / stats.totalDetections) * 100).toFixed(1))
+        : 0;
+      
+      setSessionStats(prev => ({
+        ...prev,
+        violations: stats.violationCount,
+        accuracy: accuracy
+      }));
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeStatus();
+    };
   }, [isCamOn]);
 
   const handleManualCapture = () => {
@@ -167,7 +242,7 @@ const LiveMonitoring = () => {
         toast.promise(
           api.post('/helmet/predict', formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
-          }), 
+          }),
           {
             loading: 'Analyzing frame...',
             success: 'Analysis complete!',
@@ -214,18 +289,37 @@ const LiveMonitoring = () => {
         <div className="col-span-12 lg:col-span-9 space-y-4">
           <div className="relative aspect-video bg-surface-low rounded-md border border-on-surface/5 overflow-hidden tech-glow group">
             {isCamOn ? (
-              <img
-                ref={imgRef}
-                crossOrigin="anonymous"
-                src={`${API_BASE_URL}/helmet/video-feed?token=${localStorage.getItem('token') || ''}`}
-                alt="Live Stream"
-                className="w-full h-full object-cover"
-                onError={() => setIsCamOn(false)}
-              />
+              <>
+                <img
+                  ref={imgRef}
+                  crossOrigin="anonymous"
+                  src={`${API_BASE_URL}/helmet/video-feed?token=${localStorage.getItem('token') || ''}`}
+                  alt="Live Stream"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    console.warn("Video feed error or initializing...", e);
+                  }}
+                />
+                <div className="scanline"></div>
+              </>
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center bg-background/50 text-on-surface-variant">
-                <Camera className="w-12 h-12 mb-4 opacity-30" />
-                <p className="font-mono text-[10px] uppercase tracking-[0.3em]">Camera Link Offline</p>
+              <div className="w-full h-full flex flex-col items-center justify-center bg-surface-low/30 backdrop-blur-sm relative">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(218,226,253,0.03)_0%,transparent_70%)]"></div>
+                <div className="p-6 bg-on-surface/5 rounded-full mb-6 border border-on-surface/5 shadow-inner relative group-hover:border-primary/20 transition-colors">
+                  <Camera className="w-12 h-12 text-on-surface/20 group-hover:text-primary/30 transition-colors" />
+                </div>
+                <h3 className="font-mono text-xs font-black uppercase tracking-[0.4em] text-on-surface/40 mb-2">Link Standby</h3>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-px bg-on-surface/10"></div>
+                  <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-on-surface/20 italic">Awaiting secure handshake...</p>
+                  <div className="w-8 h-px bg-on-surface/10"></div>
+                </div>
+
+                {/* Visual interface elements */}
+                <div className="absolute top-8 left-8 flex flex-col gap-1.5 opacity-20">
+                  <div className="w-12 h-0.5 bg-on-surface/30"></div>
+                  <div className="w-8 h-0.5 bg-on-surface/30"></div>
+                </div>
               </div>
             )}
 
@@ -243,7 +337,7 @@ const LiveMonitoring = () => {
                 </div>
               </div>
             </div>
-            
+
             {/* Corner Markers */}
             <div className="absolute top-4 left-4 w-6 h-6 border-t border-l border-primary/40"></div>
             <div className="absolute top-4 right-4 w-6 h-6 border-t border-r border-primary/40"></div>
@@ -268,19 +362,12 @@ const LiveMonitoring = () => {
               <div className="flex items-center gap-2">
                 <Activity className="w-3.5 h-3.5 text-primary" /> Session Intelligence
               </div>
-              <button 
-                onClick={() => {
-                  if (window.confirm('Reset current session stats?')) {
-                    localStorage.removeItem('helmet_session_start');
-                    localStorage.removeItem('helmet_session_stats');
-                    localStorage.removeItem('helmet_processed_ids');
-                    window.location.reload(); // Hard reload to clear all states
-                  }
-                }}
-                className="p-1 hover:text-primary transition-colors opacity-40 hover:opacity-100"
+              <button
+                onClick={handleResetSession}
                 title="Reset Session"
+                className="p-1 hover:text-primary transition-colors opacity-40 hover:opacity-100"
               >
-                <RefreshCcw className="w-3 h-3" />
+                <RefreshCcw className="w-3.5 h-3.5" />
               </button>
             </h3>
 
@@ -323,7 +410,7 @@ const LiveMonitoring = () => {
             <div className="space-y-3">
               {recentLogs.length > 0 ? recentLogs.map((log, i) => (
                 <div key={log._id || log.id} className="flex gap-3 items-start p-2 hover:bg-surface rounded transition-all border border-transparent hover:border-on-surface/10 group">
-                  <div 
+                  <div
                     className="w-10 h-10 bg-surface-highest rounded flex items-center justify-center shrink-0 overflow-hidden cursor-pointer hover:ring-1 hover:ring-primary/30 transition-all"
                     onClick={() => { if (log.image_url) setSelectedImageIndex(i); }}
                   >
@@ -353,25 +440,25 @@ const LiveMonitoring = () => {
       {selectedImageIndex !== null && recentLogs[selectedImageIndex] && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-200">
           <div className="absolute inset-0 bg-background/98 backdrop-blur-2xl" onClick={() => setSelectedImageIndex(null)}></div>
-          
+
           <div className="relative max-w-full max-h-full flex flex-col items-center">
             {/* Navigation Controls */}
             <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none px-4 md:-mx-24">
-                <button 
-                  onClick={handlePrevImage}
-                  className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-lg border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto"
-                >
-                    <ChevronLeft className="w-6 h-6" />
-                </button>
-                <button 
-                  onClick={handleNextImage}
-                  className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-lg border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto"
-                >
-                    <ChevronRight className="w-6 h-6" />
-                </button>
+              <button
+                onClick={handlePrevImage}
+                className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-lg border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                onClick={handleNextImage}
+                className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-lg border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
             </div>
 
-            <button 
+            <button
               onClick={() => setSelectedImageIndex(null)}
               className="absolute -top-12 right-0 p-2 text-on-surface-variant hover:text-on-surface transition-all flex items-center gap-2 text-[9px] font-mono tracking-widest uppercase cursor-pointer"
             >
@@ -379,9 +466,9 @@ const LiveMonitoring = () => {
             </button>
 
             <div className="surface-1 border border-primary/20 p-1 rounded-md shadow-2xl relative overflow-hidden group">
-              <img 
-                src={recentLogs[selectedImageIndex].image_url} 
-                alt="Enlarged Intelligence" 
+              <img
+                src={recentLogs[selectedImageIndex].image_url}
+                alt="Enlarged Intelligence"
                 className="max-w-full max-h-[75vh] object-contain rounded"
               />
               <div className="absolute top-4 left-4 flex gap-2">
@@ -389,22 +476,22 @@ const LiveMonitoring = () => {
                   <span className="text-[9px] font-mono font-black text-primary tracking-widest uppercase">ID: {recentLogs[selectedImageIndex]._id?.slice(-6) || 'N/A'}</span>
                 </div>
               </div>
-              
+
               <div className="absolute top-4 right-4 bg-background/60 backdrop-blur-md px-3 py-1 rounded border border-on-surface/10">
-                  <span className="text-[9px] font-mono font-bold text-on-surface uppercase tracking-widest">{selectedImageIndex + 1} / {recentLogs.length}</span>
+                <span className="text-[9px] font-mono font-bold text-on-surface uppercase tracking-widest">{selectedImageIndex + 1} / {recentLogs.length}</span>
               </div>
 
               {/* Data Overlay */}
               <div className="absolute bottom-4 left-4 right-4 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500">
                 <div className="bg-background/90 backdrop-blur-md border border-on-surface/10 p-4 rounded shadow-2xl">
-                    <p className="text-[8px] font-mono text-primary font-bold uppercase tracking-widest mb-1 opacity-60">System Log Timestamp</p>
-                    <p className="text-sm font-black text-on-surface font-mono">{new Date(recentLogs[selectedImageIndex].timestamp).toLocaleString()}</p>
+                  <p className="text-[8px] font-mono text-primary font-bold uppercase tracking-widest mb-1 opacity-60">System Log Timestamp</p>
+                  <p className="text-sm font-black text-on-surface font-mono">{new Date(recentLogs[selectedImageIndex].timestamp).toLocaleString()}</p>
                 </div>
               </div>
             </div>
 
             <div className="mt-8">
-               <a 
+              <a
                 href={recentLogs[selectedImageIndex].image_url}
                 download
                 className="flex items-center gap-3 px-10 py-4 bg-primary text-background font-bold rounded-md text-[10px] hover:bg-primary-variant transition-all uppercase tracking-[0.2em] shadow-xl"

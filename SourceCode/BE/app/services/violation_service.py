@@ -5,9 +5,13 @@ from motor.motor_asyncio import AsyncIOMotorCollection
 import numpy as np
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
+import logging
 
 from SourceCode.BE.app.services.upload_service import upload_image_to_cloudinary
 from SourceCode.BE.app.schemas.helmet_schema import Detection, ViolationHistoryResponse, ViolationRecord
+from SourceCode.BE.app.core.websocket_manager import WebSocketManager
+
+logger = logging.getLogger(__name__)
 
 def _build_violation_query(
     start_date: datetime = None,
@@ -142,13 +146,14 @@ async def save_violation_backtask(
         annotated_frame: np.ndarray, 
         violation_count: int, 
         all_detections: list[Detection], 
-        db_collection: AsyncIOMotorCollection
+        db_collection: AsyncIOMotorCollection,
+        websocket_manager: WebSocketManager | None = None
     ):
     """Background task for saving violation record"""
 
     try:
         cloud_url = await upload_image_to_cloudinary(annotated_frame)
-        print(f"Image uploaded to Cloudinary: {cloud_url}")
+        logger.info(f"Image uploaded to Cloudinary: {cloud_url}")
 
         timestamp_obj = datetime.now()
 
@@ -158,7 +163,22 @@ async def save_violation_backtask(
             total_violations=violation_count,
             detections=[d for d in all_detections if d.class_id == 1]  # Chỉ lưu detections vi phạm (không đội mũ)
         )
-        await db_collection.insert_one(violation_doc.model_dump())
-        print(f"[Background] Saved violation to Cloud")
+        inserted_doc = violation_doc.model_dump()
+        await db_collection.insert_one(inserted_doc)
+        
+        # Gán ID vừa tạo vào doc trước khi gửi qua WebSocket
+        if "_id" in inserted_doc:
+            violation_doc.id = str(inserted_doc["_id"])
+            
+        logger.info(f"[Background] Saved violation to Cloud with ID: {violation_doc.id}")
+
+        # Broadcast to WebSockets
+        if websocket_manager:
+            payload = {
+                "event": "new_violation",
+                "data": violation_doc.model_dump(mode='json')
+            }
+            await websocket_manager.broadcast(payload)
+            logger.info(f"[Background] Broadcasted new violation to WebSockets")
     except Exception as e:
-        print(f"[Background] Failed to save history: {e}")
+        logger.error(f"[Background] Failed to save history: {e}")
