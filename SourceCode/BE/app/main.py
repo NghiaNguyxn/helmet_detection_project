@@ -30,10 +30,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Loading model...")
 
-    app.state.model = YOLO(setting.MODEL_PATH)
-    # Ép sử dụng GPU nếu có thể
-    app.state.model.to('cuda') 
-    logger.info("Model loaded successfully on GPU (CUDA)")
+    app.state.model = YOLO(setting.MODEL_PATH, task='detect')
+    logger.info("Model loaded successfully (ONNX format)")
 
     init_sql_db()
     logger.info("SQL database initialized")

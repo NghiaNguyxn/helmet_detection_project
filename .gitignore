@@ -8,6 +8,7 @@ venv/
 dataset/
 runs/
 *.pt
+*.onnx
 
 # Enviroment 
 .env

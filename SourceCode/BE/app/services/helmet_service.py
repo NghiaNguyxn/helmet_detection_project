@@ -14,7 +14,8 @@ from SourceCode.BE.app.services.violation_service import save_violation_backtask
 from SourceCode.BE.app.utils.drawing import annotated_helmet_frame
 
 async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection, background_tasks: BackgroundTasks) -> PredictResponse:
-
+    """Process uploaded image, run AI inference, and log violations if found"""
+    
     try:
         # Đọc dữ liệu binary từ UploadFile theo chuẩn FastAPI
         contents = await file.read() 

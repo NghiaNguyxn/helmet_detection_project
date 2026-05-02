@@ -13,6 +13,13 @@ class Settings(BaseSettings):
     MODEL_PATH: str
     VIOLATION_THRESHOLD: float 
     ALERT_COOLDOWN: int
+    
+    # Tracker
+    TRACK_HIGH_THRESH: float = 0.5
+    TRACK_LOW_THRESH: float = 0.1
+    NEW_TRACK_THRESH: float = 0.6
+    TRACK_BUFFER: int = 60
+    MATCH_THRESH: float = 0.8
 
     # Directory
     VIOLATION_DIR: str
@@ -47,8 +54,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parent.parent.parent / ".env"),
         env_file_encoding='utf-8',
-        extra='ignore'
+        extra='allow'
     )
-
 
 setting = Settings()

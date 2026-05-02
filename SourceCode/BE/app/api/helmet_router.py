@@ -1,5 +1,4 @@
-from typing import Annotated
-from fastapi import APIRouter, BackgroundTasks, UploadFile, File, HTTPException, Depends, status, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Depends, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from ultralytics import YOLO
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -10,8 +9,8 @@ from SourceCode.BE.app.schemas.base_schema import BaseResponse
 from SourceCode.BE.app.dependencies.model import get_model
 from SourceCode.BE.app.dependencies.nosql_database import get_violation_collection
 from SourceCode.BE.app.dependencies.user import allow_any_staff, VerifiedUser
-from SourceCode.BE.app.services.video_service import generated_video_frames, stop_video_frames
-from SourceCode.BE.app.exceptions.helmet import InvalidFileTypeError, CannotStopCameraError
+from SourceCode.BE.app.services.video_service import generated_video_frames, stop_video_frames, global_camera
+from SourceCode.BE.app.exceptions.helmet import InvalidFileTypeError, CannotStopCameraError, CameraSwitchError
 from SourceCode.BE.app.core.websocket_manager import manager
 
 router = APIRouter(prefix="/helmet", tags=["Helmet Detection"])
@@ -89,15 +88,39 @@ async def video_feed(
 
 @router.post("/stop-video-feed", dependencies=[Depends(allow_any_staff)])
 async def stop_video_feed():
-    """
-    Stop the live video stream.
-    """
+    """Stop the live video stream."""
 
     try:
         stop_video_frames()
         return BaseResponse(
-            code=200, 
+            code=status.HTTP_200_OK, 
             message="Camera stopped successfully", 
         )
     except Exception as e:
         raise CannotStopCameraError()
+
+@router.get("/camera-sources", dependencies=[Depends(allow_any_staff)])
+async def get_camera_sources():
+    """Get the list of available camera source IDs from .env"""
+
+    return BaseResponse(
+        code=status.HTTP_200_OK,
+        message="Camera sources retrieved",
+        result={"sources": list(global_camera.camera_sources.keys()), "current": global_camera.current_source_id}
+    )
+
+@router.post("/switch-camera/{source_id}", dependencies=[Depends(allow_any_staff)])
+async def switch_camera(
+    source_id: str
+):
+    """Switch the live video feed to a different camera source"""
+
+    success = await global_camera.switch_camera(source_id)
+    if not success:
+        raise CameraSwitchError()
+
+    return BaseResponse(
+        code=status.HTTP_200_OK,
+        message=f"Switched to {source_id} successfully",
+        result={"current": global_camera.current_source_id}
+    )

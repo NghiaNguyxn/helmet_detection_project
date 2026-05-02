@@ -101,7 +101,7 @@ async def export_violations_to_excel(
     ws = wb.active
     ws.title = "Lịch sử vi phạm"
     
-    # 1. Header Styling
+    # 1. Định dạng tiêu đề
     header_fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
     header_font = Font(bold=True)
     header_alignment = Alignment(horizontal="center")
@@ -113,7 +113,7 @@ async def export_violations_to_excel(
         cell.fill = header_fill
         cell.alignment = header_alignment
 
-    # 2. Add Data
+    # 2. Thêm dữ liệu vào bảng
     row_idx = 2
     async for doc in cursor:
         detections = doc.get("detections", [])
@@ -126,7 +126,7 @@ async def export_violations_to_excel(
         ws.cell(row=row_idx, column=5, value=doc.get("image_url", ""))
         row_idx += 1
 
-    # 3. Auto-adjust columns
+    # 3. Tự động căn chỉnh độ rộng cột
     for col in ws.columns:
         max_len = 0
         col_letter = col[0].column_letter
@@ -172,7 +172,7 @@ async def save_violation_backtask(
             
         logger.info(f"[Background] Saved violation to Cloud with ID: {violation_doc.id}")
 
-        # Broadcast to WebSockets
+        # Gửi dữ liệu qua WebSocket tới các client
         if websocket_manager:
             payload = {
                 "event": "new_violation",

@@ -9,13 +9,30 @@ const Header = () => {
   const { user } = useAuth();
   const [wsStatus, setWsStatus] = useState('connecting');
   const [showNotifications, setShowNotifications] = useState(false);
-  const [recentAlerts, setRecentAlerts] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [recentAlerts, setRecentAlerts] = useState(() => {
+    const saved = localStorage.getItem('helmet_header_alerts');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [unreadCount, setUnreadCount] = useState(() => {
+    return parseInt(localStorage.getItem('helmet_header_unread') || '0');
+  });
   const notifRef = useRef(null);
   const navigate = useNavigate();
 
+  // Sync to localStorage
+  useEffect(() => {
+    localStorage.setItem('helmet_header_alerts', JSON.stringify(recentAlerts));
+  }, [recentAlerts]);
+
+  useEffect(() => {
+    localStorage.setItem('helmet_header_unread', unreadCount.toString());
+  }, [unreadCount]);
+
   useEffect(() => {
     const fetchInitialAlerts = async () => {
+      // Chỉ fetch nếu chưa có data lưu trữ
+      if (recentAlerts.length > 0) return;
+      
       try {
         const res = await api.get('/violations/?limit=3');
         if (res.data.code === 200) {
@@ -36,6 +53,15 @@ const Header = () => {
       }
     });
 
+    // Reset logic when camera is toggled (detected via localStorage change)
+    const handleStorageChange = (e) => {
+      if (e.key === 'helmet_session_start') {
+        setUnreadCount(0);
+        setRecentAlerts([]);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
     const unsubscribeStatus = socketService.onStatusChange((status) => {
       setWsStatus(status);
     });
@@ -43,6 +69,7 @@ const Header = () => {
     return () => {
       unsubscribeAlerts();
       unsubscribeStatus();
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 

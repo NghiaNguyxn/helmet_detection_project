@@ -4,6 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorCollection
 
 from SourceCode.BE.app.dependencies.nosql_database import get_violation_collection
 from SourceCode.BE.app.dependencies.user import allow_admin, allow_any_staff
+from SourceCode.BE.app.exceptions.violation import ViolationNotFoundError
 from SourceCode.BE.app.schemas.helmet_schema import ViolationHistoryResponse
 from SourceCode.BE.app.schemas.base_schema import BaseResponse
 from SourceCode.BE.app.services import violation_service
@@ -50,7 +51,8 @@ async def delete_violation(
 
     success = await violation_service.delete_violation(db_collection, violation_id)
     if not success:
-        return BaseResponse(code=status.HTTP_404_NOT_FOUND, message="Violation record not found")
+        raise ViolationNotFoundError()
+        
     return BaseResponse(code=status.HTTP_200_OK, message="Violation record deleted successfully")
 
 @router.get("/export", dependencies=[Depends(allow_any_staff)])

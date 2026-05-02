@@ -12,6 +12,7 @@ class Detection(BaseModel):
     class_name: str
     confidence: float
     bbox: BoundingBox
+    track_id: int | None = None
 
 class PredictResponse(BaseModel):
     detections: list[Detection]

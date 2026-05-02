@@ -17,3 +17,9 @@ class CannotStopCameraError(AppError):
     
     def __init__(self, message: str = "Failed to stop the camera. Please try again."):
         super().__init__(message)
+
+class CameraSwitchError(AppError):
+    """Exception raised when switching camera sources fails."""
+    
+    def __init__(self, message: str = "Failed to switch camera or invalid source ID."):
+        super().__init__(message)

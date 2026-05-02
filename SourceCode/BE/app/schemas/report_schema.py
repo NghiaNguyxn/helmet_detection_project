@@ -21,7 +21,7 @@ class SummaryReportResponse(BaseModel):
     hourly_breakdown: Optional[list[HourlyViolationCount]] = None
 
 class TrendReportResponse(BaseModel):
-    labels: list[str]  # dates or hours
+    labels: list[str]  # dates hoặc hours
     datasets: dict[str, list[float]]  # vd: {"violations": [1,2,3], "accuracy": [98.5, 99.0]}
 
 class ExportReportRequest(BaseModel):

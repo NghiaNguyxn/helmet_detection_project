@@ -1,18 +1,21 @@
+import logging
 from datetime import date, datetime
 from motor.motor_asyncio import AsyncIOMotorCollection
 from SourceCode.BE.app.schemas.report_schema import DailyViolationCount, HourlyViolationCount, SummaryReportResponse, TrendReportResponse
+
+logger = logging.getLogger(__name__)
 
 async def get_summary_report(
         collection: AsyncIOMotorCollection,
         start_date: date,
         end_date: date
     ) -> SummaryReportResponse:
-    """Summary of violations by day and by hour"""
+    """Generate a summary report of violations broken down by day and hour"""
 
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.max.time())
 
-    # Daily breakdown
+    # Phân tích theo ngày (Daily breakdown)
     daily_pipeline = [
         {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}},
         {"$group": {
@@ -29,7 +32,7 @@ async def get_summary_report(
         count=item["count"]
     ) for item in daily_result]
 
-    # Total violations and stats
+    # Tổng hợp các chỉ số vi phạm và độ chính xác
     total_pipeline = [
         {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}}, 
         {"$project": {
@@ -57,7 +60,7 @@ async def get_summary_report(
         total_detections = 0
         accuracy = 100.0
 
-    # Hourly breakdown
+    # Phân tích theo giờ (Hourly breakdown)
     hourly_pipeline = [
         {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}},
         {"$group": {
@@ -74,12 +77,13 @@ async def get_summary_report(
         count=item["count"]
     ) for item in hourly_results]
 
-    # Calculate Peak Hour
+    # Tính toán giờ cao điểm (Peak Hour)
     peak_hour_str = "None"
     if hourly_results:
         peak_entry = max(hourly_results, key=lambda x: x["count"])
         h = peak_entry["_id"]
         cnt = peak_entry["count"]
+        # Định dạng: HH:00 AM/PM (X người)
         period = "AM" if h < 12 else "PM"
         hour_12 = h % 12
         if hour_12 == 0: hour_12 = 12
@@ -102,7 +106,7 @@ async def get_trend_report(
         end_date: date,
         granularity: str = "day"
     ) -> TrendReportResponse: 
-    """Trend data for charts with Real Accuracy"""
+    """Retrieve trend data for visualization charts with accuracy metrics"""
 
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.max.time())
@@ -115,6 +119,7 @@ async def get_trend_report(
     }
 
     if granularity == "day":
+        # Xu hướng theo ngày
         pipeline = [
             {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}},
             {"$project": base_project},
@@ -136,6 +141,7 @@ async def get_trend_report(
         accuracy_data = [round(float(item.get("accuracy", 0) or 1.0) * 100, 1) for item in results]
 
     else: # hour
+        # Xu hướng theo giờ
         pipeline = [
             {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}},
             {"$project": base_project},

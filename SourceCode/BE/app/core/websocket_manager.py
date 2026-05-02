@@ -1,13 +1,12 @@
 from fastapi import WebSocket
 
 import logging
-import json
 
 logger = logging.getLogger(__name__)
 
 class WebSocketManager:
     def __init__(self):
-        # Store active connections
+        # Lưu trữ kết nối đang hoạt động
         self.active_connections: list[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
@@ -36,7 +35,7 @@ class WebSocketManager:
     async def broadcast(self, message: dict):
         """Send a message to all active clients"""
 
-        for connection in self.active_connections[:]: # Use slice to avoid list mutation errors
+        for connection in self.active_connections[:]: # Sử dụng slice để tránh lỗi mutation list
             try:
                 await connection.send_json(message)
             except Exception as e:

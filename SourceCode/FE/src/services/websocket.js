@@ -10,14 +10,20 @@ class WebSocketService {
     this.reconnectInterval = 3000;
     this.url = API_BASE_URL.replace('http', 'ws') + '/helmet/ws';
     this.status = 'offline'; // 'offline', 'connecting', 'online'
-    
-    // Session Intelligence (Persist across page changes)
-    this.sessionStats = {
+
+    // NẠP DỮ LIỆU TỪ LOCALSTORAGE NẾU CÓ
+    const savedStats = localStorage.getItem('helmet_socket_session_stats');
+    this.sessionStats = savedStats ? JSON.parse(savedStats) : {
       violationCount: 0,
       totalDetections: 0,
       totalConfidence: 0,
       startTime: Date.now()
     };
+  }
+
+  // Lưu lại stats vào localStorage mỗi khi có thay đổi
+  _saveStats() {
+    localStorage.setItem('helmet_socket_session_stats', JSON.stringify(this.sessionStats));
   }
 
   resetSessionStats() {
@@ -27,7 +33,8 @@ class WebSocketService {
       totalConfidence: 0,
       startTime: Date.now()
     };
-    this.notifyStatusChange(this.status); // Trigger update
+    this._saveStats(); // Xóa trắng trong localStorage
+    this.notifyStatusChange(this.status);
   }
 
   connect() {
@@ -52,11 +59,11 @@ class WebSocketService {
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        
+
         // Update Session Intelligence if it's a violation
         if (data.event === 'new_violation') {
           this.sessionStats.violationCount += 1;
-          
+
           // Calculate average confidence for this record
           const detections = data.data.detections || [];
           if (detections.length > 0) {
@@ -64,18 +71,19 @@ class WebSocketService {
             this.sessionStats.totalDetections += 1;
             this.sessionStats.totalConfidence += avgConf;
           }
-          
-          // Notify listeners about the update (using status listeners as a trick or we could add stats listeners)
+
+          // Notify listeners (FE) to update their UI
+          this._saveStats();
           this.notifyStatusChange(this.status);
         }
-        
+
         this.listeners.forEach(listener => listener(data));
       } catch (err) {
         console.error('Error parsing WebSocket message:', err);
       }
     };
 
-    this.ws.onclose = (event) => {
+    this.ws.onclose = () => {
       console.log('WebSocket Connection Closed');
       this.status = 'offline';
       this.notifyStatusChange('offline');
@@ -86,7 +94,7 @@ class WebSocketService {
       console.error('WebSocket Error:', err);
       this.status = 'offline';
       this.notifyStatusChange('offline');
-      this.ws.close();
+      if (this.ws) this.ws.close();
     };
   }
 

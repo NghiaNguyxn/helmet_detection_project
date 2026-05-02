@@ -39,7 +39,7 @@ def verify_token(token: str):
     except InvalidTokenError:
         return None
     
-# Token generation helpers
+# Hàm tạo token xác thực (dùng cho email verification và reset password)
 def create_verification_token() -> str:
     import secrets
     return secrets.token_urlsafe(32)

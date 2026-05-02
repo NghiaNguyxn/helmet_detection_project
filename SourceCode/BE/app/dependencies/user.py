@@ -22,25 +22,25 @@ async def get_current_user(
     
     token = None
     
-    # 1. Try to get token from Authorization Header
+    # 1. Thử lấy token từ Authorization Header
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
         
-    # 2. If not in Header, try to get from Query Parameter (Common for WebSockets)
+    # 2. Thử lấy token từ Query Parameter (Dành cho WebSockets)
     if not token:
         token = request.query_params.get("token")
         
-    # 3. If still no token, raise authentication error
+    # 3. Nếu không có token, ném ra lỗi xác thực
     if not token:
         raise auth_exceptions.NotAuthenticatedError()
 
-    # 4. Verify the token content
+    # 4. Xác thực nội dung token
     token_data = security.verify_token(token)
     if token_data is None:
         raise auth_exceptions.NotAuthenticatedError()
     
-    # 5. Fetch user from database
+    # 5. Lấy thông tin người dùng từ cơ sở dữ liệu
     user = user_service.get_user_by_username_or_email(db, token_data.username)
     if user is None:
         raise user_exceptions.UserNotFound()
@@ -76,6 +76,8 @@ class RoleChecker:
         self.allowed_roles = allowed_roles
 
     async def __call__(self, current_user: ActiveUser):
+        """Check if the current user has the required role"""
+        
         if current_user.role not in self.allowed_roles:
             raise auth_exceptions.PermissionDenied()
         
