@@ -3,8 +3,13 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from SourceCode.BE.app.core.config import setting
 
 async def get_violation_collection(request: Request) -> AsyncIOMotorCollection:
-    """Dependency to provide the 'violations' collection."""
+    """Dependency to provide the 'violations' collection"""
 
     client = request.app.state.mongodb_client
-
     return client[setting.DATABASE_NAME][setting.VIOLATION_COLLECTION]
+
+async def get_traffic_stats_collection(request: Request) -> AsyncIOMotorCollection:
+    """Dependency to provide the 'traffic_stats' collection"""
+
+    client = request.app.state.mongodb_client
+    return client[setting.DATABASE_NAME][setting.TRAFFIC_STATS_COLLECTION]

@@ -2,6 +2,7 @@ import cv2
 import time
 import logging
 import asyncio
+from datetime import datetime
 import threading
 import yaml
 import os
@@ -15,6 +16,8 @@ from SourceCode.BE.app.core.config import setting
 from SourceCode.BE.app.utils.drawing import annotated_helmet_frame
 from SourceCode.BE.app.services.violation_service import save_violation_backtask
 from SourceCode.BE.app.core.websocket_manager import manager
+from SourceCode.BE.app.services import alert_service
+from SourceCode.BE.app.schemas.alert_schema import SecurityAlertCreate
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +35,12 @@ class GlobalCamera:
         self.inference_task: Optional[asyncio.Task] = None
         self.capture_thread: Optional[threading.Thread] = None
         self.lock = asyncio.Lock()
-        self.results = None  # Lưu kết quả AI mới nhất
+        self.cap_lock = threading.Lock()  # Khóa bảo vệ VideoCapture khỏi xung đột luồng
 
-        # ── MULTI-VIEWER COUNTER ──────────────────────────────────────────
-        # Theo dõi số lượng người đang xem stream cùng lúc.
-        # Pipeline chỉ dừng khi viewers_count về 0 (tất cả đã disconnect).
-        # → Cho phép nhiều tab/user cùng xem mà không làm gián đoạn nhau.
-        self.viewers_count: int = 0
+        # ── MULTI-VIEWER TRACKING (Sử dụng Set để tránh đếm trùng) ──────────
+        # Lưu trữ danh sách viewer_id (v_id) đang hoạt động.
+        # Pipeline chỉ dừng khi không còn ID nào trong danh sách.
+        self.active_viewers: set[str] = set()
 
         # ── SESSION GUARD ─────────────────────────────────────────────────
         # session_id tăng mỗi lần pipeline khởi động MỚI (từ trạng thái dừng).
@@ -62,12 +64,15 @@ class GlobalCamera:
         self.current_source_id = "CAM_1"  # Mặc định là CAM_1
         self.is_connected = False
         self.camera_status = "Inactive"  # Inactive, Connecting, Streaming, Error
-        self.stop_requested = False  # Flag ra hiệu cho generator thoát
 
         # Thông số FPS và Telemetry
-        self.fps = 0
-        self.frame_count = 0
-        self.fps_start_time = time.time()
+        self.ai_fps = 0
+        self.ai_frame_count = 0
+        self.ai_fps_start_time = time.time()
+        
+        self.capture_fps = 0
+        self.capture_frame_count = 0
+        self.capture_fps_start_time = time.time()
 
         # Màn hình chờ (Placeholder) khi đang chuyển cam
         self.placeholder_frame = self._create_placeholder_frame("INITIALIZING...")
@@ -79,8 +84,27 @@ class GlobalCamera:
         # Đường dẫn file config tracker
         self.tracker_config_path = Path(__file__).parent.parent / "core" / "custom_tracker.yaml"
 
+    async def force_stop(self, user, session):
+        """Forcefully clear all viewers and stop hardware, then broadcast alert"""
+        self.active_viewers.clear()
+        await self.stop("FORCE_STOP_SIGNAL")
+        
+        if self._session_cancel_event:
+            self._session_cancel_event.set()
+            
+        # Phát cảnh báo hệ thống
+        await alert_service.create_and_broadcast_alert(
+            session, 
+            user, 
+            SecurityAlertCreate(
+                message="SYSTEM FORCE RESET: All camera sessions have been terminated",
+                camera_id="SYSTEM"
+            )
+        )
+        logger.info(f"FORCE STOP executed by {user.username}")
+
     # ──────────────────────────────────────────────────────────────────────
-    # HELPERS
+    # CORE PIPELINE
     # ──────────────────────────────────────────────────────────────────────
 
     def _load_camera_sources(self) -> dict[str, dict]:
@@ -160,15 +184,16 @@ class GlobalCamera:
     # LIFECYCLE: start / stop
     # ──────────────────────────────────────────────────────────────────────
 
-    async def start(self, model, db_collection, source_id: str = None) -> int:
+    async def start(self, model, db_collection, viewer_id: str, source_id: str = None) -> int:
         """
-        Tăng viewers_count và khởi động pipeline nếu chưa chạy.
-        Trả về session_id để caller dùng khi gọi stop().
+        Registers viewer_id and starts the pipeline if not already running.
+        Returns the session_id for the caller to use during stop().
 
-        Multi-viewer: nếu pipeline đã chạy, chỉ tăng viewers_count và return.
-        Session guard: mỗi lần pipeline khởi động MỚI, session_id tăng lên,
-        vô hiệu hoá mọi stop() đến từ các generator của phiên trước.
+        Multi-viewer: if pipeline is already running, just register viewer_id and return.
+        Session guard: each NEW hardware start increments session_id,
+        invalidating any stop() signals from previous sessions.
         """
+
         async with self.lock:
             # Khởi tạo lazy cho asyncio.Event vì chúng cần event loop
             if self._session_cancel_event is None:
@@ -181,10 +206,11 @@ class GlobalCamera:
             if source_id and source_id in self.camera_sources:
                 self.current_source_id = source_id
 
-            # ── MULTI-VIEWER: Tăng counter dù pipeline đang chạy hay không ──
-            self.viewers_count += 1
+            # ── MULTI-VIEWER: Đăng ký ID người xem ──
+            self.active_viewers.add(viewer_id)
             logger.info(
-                f"Viewer joined (viewers={self.viewers_count}, "
+                f"Viewer joined (v_id={viewer_id}, "
+                f"total={len(self.active_viewers)}, "
                 f"session={self._session_id}, source={self.current_source_id})"
             )
 
@@ -192,87 +218,84 @@ class GlobalCamera:
             if self.is_running:
                 return self._session_id
 
-            # ── Pipeline chưa chạy → khởi động phiên MỚI ──
+            try:
+                # ── Pipeline chưa chạy → khởi động phiên MỚI ──
 
-            # Nếu phần cứng chưa nhả (background cleanup vẫn đang release camera)
-            # → Phải đợi xong mới được mở VideoCapture mới, tránh xung đột driver
-            if not self._hw_released_event.is_set():
-                logger.warning("Hardware is busy releasing from previous session. Waiting...")
-                await self._hw_released_event.wait()
-                logger.info("Hardware is now FREE. Proceeding to start new session.")
+                # Nếu phần cứng chưa nhả (background cleanup vẫn đang release camera)
+                # → Phải đợi xong mới được mở VideoCapture mới, tránh xung đột driver
+                if not self._hw_released_event.is_set():
+                    logger.warning("Hardware is busy releasing from previous session. Waiting...")
+                    await self._hw_released_event.wait()
+                    logger.info("Hardware is now FREE. Proceeding to start new session.")
 
-            # Tăng session_id → vô hiệu hoá mọi stop() của phiên cũ
-            self._session_id += 1
-            my_session = self._session_id
-            logger.info(f"Starting new session={my_session} (source={self.current_source_id})")
+                # Tăng session_id → vô hiệu hoá mọi stop() của phiên cũ
+                self._session_id += 1
+                my_session = self._session_id
+                logger.info(f"Starting new session={my_session} (source={self.current_source_id})")
 
-            # Reset trạng thái
-            self.camera_status = "Connecting"
-            self.placeholder_frame = self._create_placeholder_frame(
-                f"CONNECTING TO {self.current_source_id}..."
-            )
-            self.latest_frame = None
-            self.raw_frame = None
-            self.track_history.clear() # Xóa lịch sử cũ
-            self.logged_ids.clear()
-            self._update_tracker_config()
+                # Reset trạng thái
+                self.camera_status = "Connecting"
+                self.placeholder_frame = self._create_placeholder_frame(
+                    f"CONNECTING TO {self.current_source_id}..."
+                )
+                self.latest_frame = None
+                self.raw_frame = None
+                self.track_history.clear() # Xóa lịch sử cũ
+                self.logged_ids.clear()
+                self._update_tracker_config()
 
-            # Reset stop event và cancel signal cho phiên mới
-            # QUAN TRỌNG: Phải clear trước khi set is_running = True
-            # để generator mới không bị thoát ngay bởi signal cũ
-            self.stop_requested = False
-            self._session_cancel_event.clear()
-            self._stop_event.clear()
-            self.is_running = True
+                # Reset stop event và cancel signal cho phiên mới
+                # QUAN TRỌNG: Phải clear trước khi set is_running = True
+                # để generator mới không bị thoát ngay bởi signal cũ
+                self._session_cancel_event.clear()
+                self._stop_event.clear()
+                self.is_running = True
 
-            # Luồng 1: Chụp ảnh thô liên tục
-            self.capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
-            self.capture_thread.start()
+                # Luồng 1: Chụp ảnh thô liên tục
+                self.capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
+                self.capture_thread.start()
 
-            # Luồng 2: Chạy AI inference
-            self.inference_task = asyncio.create_task(
-                self._inference_loop(model, db_collection)
-            )
+                # Luồng 2: Chạy AI inference
+                self.inference_task = asyncio.create_task(
+                    self._inference_loop(model, db_collection)
+                )
 
-            # Luồng 3: Nhịp đập Telemetry (Gửi trạng thái liên tục bất kể AI có chạy hay không)
-            self.telemetry_task = asyncio.create_task(self._telemetry_heartbeat())
+                # Luồng 3: Nhịp đập Telemetry (Gửi trạng thái liên tục bất kể AI có chạy hay không)
+                self.telemetry_task = asyncio.create_task(self._telemetry_heartbeat())
 
-            return my_session
+                return my_session
+            except Exception as e:
+                # Nếu khởi động lỗi → Phải XÓA viewer_id ngay lập tức
+                if viewer_id in self.active_viewers:
+                    self.active_viewers.remove(viewer_id)
+                logger.error(f"Failed to start camera session. Remaining: {len(self.active_viewers)}. Error: {e}")
+                raise e
 
-    async def stop(self, session_id: int):
+    async def stop(self, viewer_id: str, session_id: Optional[int] = None):
         """
-        Giảm viewers_count. Dừng pipeline khi không còn viewer nào.
+        Decrements viewers_count and stops the pipeline when no viewers remain.
 
-        Session guard: nếu session_id không khớp với session hiện tại,
-        stop() này đến từ một generator cũ (phiên trước) → bỏ qua hoàn toàn,
-        KHÔNG giảm viewers_count của phiên mới.
+        Session guard: if session_id doesn't match the current session,
+        this stop signal is from an outdated generator -> ignore hardware control.
 
-        Multi-viewer: nếu vẫn còn viewer khác, chỉ giảm count, không dừng pipeline.
+        Multi-viewer: if other viewers are still active, only remove current ID.
         """
+
         cap_to_release = None
         thread_to_join = None
 
         async with self.lock:
-            # ── SESSION GUARD ────────────────────────────────────────────
-            # stop() của generator cũ (session_id nhỏ hơn) bị bỏ qua.
-            # Điều này xảy ra khi: user tắt → bật ngay → generator cũ
-            # chạy finally → stop() nhưng pipeline mới đã được khởi động.
-            if session_id != self._session_id:
-                logger.info(
-                    f"Ignoring stale stop() for session={session_id} "
-                    f"(current session={self._session_id})"
-                )
+            # ── LUÔN xóa ID khỏi danh sách khi rời đi ──
+            if viewer_id in self.active_viewers:
+                self.active_viewers.remove(viewer_id)
+                logger.info(f"Viewer left (v_id={viewer_id}). Remaining: {len(self.active_viewers)}")
+            
+            # ── SESSION GUARD: Chỉ cho phép phiên hiện tại điều khiển phần cứng ──
+            if session_id is not None and session_id != self._session_id:
                 return
 
-            # ── MULTI-VIEWER: Giảm counter ───────────────────────────────
-            if self.viewers_count > 0:
-                self.viewers_count -= 1
-            logger.info(
-                f"Viewer left session={session_id}. Remaining: {self.viewers_count}"
-            )
-
-            # Vẫn còn viewer khác đang xem → giữ pipeline, không dừng
-            if self.viewers_count > 0:
+            # Nếu vẫn còn người xem khác → không tắt phần cứng
+            if len(self.active_viewers) > 0:
                 return
 
             if not self.is_running:
@@ -294,14 +317,14 @@ class GlobalCamera:
 
             # Lấy tham chiếu nặng rồi đặt về None TRONG lock
             # → lock được nhả ngay, start() mới không phải chờ driver
-            cap_to_release = self.cap
-            self.cap = None
+            with self.cap_lock:
+                cap_to_release = self.cap
+                self.cap = None
             thread_to_join = self.capture_thread
 
             # Xóa bộ nhớ đệm
             self.raw_frame = None
             self.latest_frame = None
-            self.results = None
             self.logged_ids.clear()
             self.track_history.clear()
             logger.info("State cleared. Releasing hardware resources in background...")
@@ -314,16 +337,25 @@ class GlobalCamera:
         asyncio.create_task(self._background_cleanup(cap_to_release, thread_to_join, session_id))
 
     async def _background_cleanup(self, cap, thread, session_id):
-        """Dọn dẹp tài nguyên nặng (OpenCV Release, Thread Join) trong background"""
+        """Clean up heavy resources (OpenCV Release, Thread Join) in the background"""
+
         try:
             logger.info(f"Background cleanup session={session_id}: Starting...")
             loop = asyncio.get_event_loop()
             
             # Chạy song song cap.release() và thread.join() để tối ưu thời gian
             cleanup_tasks = []
+            
+            def locked_release(c):
+                with self.cap_lock:
+                    if c is not None:
+                        logger.info(f"Background cleanup session={session_id}: Release starting...")
+                        c.release()
+                        logger.info(f"Background cleanup session={session_id}: Release finished.")
+
             if cap:
-                logger.info(f"Background cleanup session={session_id}: Releasing VideoCapture...")
-                cleanup_tasks.append(loop.run_in_executor(None, cap.release))
+                logger.info(f"Background cleanup session={session_id}: Scheduling VideoCapture release...")
+                cleanup_tasks.append(loop.run_in_executor(None, locked_release, cap))
             if thread and thread.is_alive():
                 logger.info(f"Background cleanup session={session_id}: Joining capture thread...")
                 cleanup_tasks.append(
@@ -368,10 +400,11 @@ class GlobalCamera:
             self.latest_frame = None
             self.is_connected = False
 
-            # Giải phóng camera hiện tại và xóa sạch bộ đệm
-            if self.cap:
-                self.cap.release()
-                self.cap = None
+            # Giải phóng camera hiện tại và xóa sạch bộ đệm một cách an toàn (dùng lock)
+            with self.cap_lock:
+                if self.cap:
+                    self.cap.release()
+                    self.cap = None
 
             self.current_source_id = new_source_id
             self.raw_frame = None
@@ -408,25 +441,35 @@ class GlobalCamera:
 
                 try:
                     source_param = int(source)
-                    # Webcam nội bộ
-                    self.cap = cv2.VideoCapture(source_param)
-                    # Ép độ phân giải HD cho webcam nội bộ
-                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                    # Webcam nội bộ - Sử dụng biến tạm và khóa để tránh race condition
+                    temp_cap = cv2.VideoCapture(source_param)
+                    if temp_cap is not None:
+                        # Ép độ phân giải HD cho webcam nội bộ
+                        temp_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                        temp_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                    
+                    with self.cap_lock:
+                        self.cap = temp_cap
                 except ValueError:
                     # RTSP Stream - Ép dùng FFMPEG và UDP để ổn định hơn
-                    self.cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-                    # Tối ưu buffer cho RTSP (chỉ lấy frame mới nhất)
-                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    temp_cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+                    if temp_cap is not None:
+                        # Tối ưu buffer cho RTSP (chỉ lấy frame mới nhất)
+                        temp_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    
+                    with self.cap_lock:
+                        self.cap = temp_cap
 
-                if self.cap.isOpened():
+                if self.cap is not None and self.cap.isOpened():
                     # Nếu trong lúc đang kết nối mà user đã đổi sang Cam khác
                     if target_id != self.current_source_id:
                         logger.warning(
                             f"ID changed {target_id}→{self.current_source_id} during connect. Releasing."
                         )
-                        self.cap.release()
-                        self.cap = None
+                        with self.cap_lock:
+                            if self.cap:
+                                self.cap.release()
+                                self.cap = None
                         continue
 
                     self.is_connected = True
@@ -452,28 +495,39 @@ class GlobalCamera:
                 source_url = self.camera_sources.get(self.current_source_id, {"url": "0"})["url"]
                 is_rtsp = not source_url.isdigit()
 
-                if is_rtsp:
+                if is_rtsp and self.cap is not None:
                     # Với RTSP, ta cần đọc cạn buffer để lấy frame mới nhất, tránh delay tích tụ
-                    for _ in range(5): # Đọc lướt 5 frame
-                        self.cap.grab()
+                    with self.cap_lock:
+                        if self.cap is not None:
+                            for _ in range(5): # Đọc lướt 5 frame
+                                if self.cap is not None:
+                                    self.cap.grab()
 
                 # Lưu tham chiếu cục bộ để tránh race condition với stop()
-                # stop() có thể set self.cap = None bất kỳ lúc nào ngoài lock
-                cap = self.cap
-                if cap is None:
-                    continue
-
-                success, frame = cap.read()
+                with self.cap_lock:
+                    cap = self.cap
+                    if cap is None:
+                        continue
+                    success, frame = cap.read()
                 if success:
                     # CHỈ set Streaming khi đã có frame thực tế
                     self.camera_status = "Streaming"
 
                     # --- AUTO-ROTATE: Tự động xoay hình nếu là hình dọc (Portrait to Landscape) ---
-                    h, w = frame.shape[:2]
+                    h, w = frame.shape[:2] 
                     if h > w:
                         frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
                     self.raw_frame = frame
+                    
+                    # Tính toán Capture FPS
+                    self.capture_frame_count += 1
+                    elapsed_time = time.time() - self.capture_fps_start_time
+                    if elapsed_time >= 1.0:
+                        self.capture_fps = round(self.capture_frame_count / elapsed_time, 1)
+                        self.capture_frame_count = 0
+                        self.capture_fps_start_time = time.time()
+
                     # Không sleep khi dùng RTSP để đảm bảo tốc độ cao nhất
                     if not is_rtsp:
                         time.sleep(0.001)
@@ -481,9 +535,12 @@ class GlobalCamera:
                     logger.warning(f"Connection lost for {self.current_source_id}. Reconnecting...")
                     self.is_connected = False
                     self.camera_status = "Error"
-                    if self.cap:
-                        self.cap.release()
-                    self.cap = None
+                    
+                    with self.cap_lock:
+                        if self.cap:
+                            self.cap.release()
+                            self.cap = None
+                    
                     self.latest_frame = None
                     # Dùng event.wait() thay vì time.sleep(1) cứng
                     if self._stop_event.wait(timeout=1):
@@ -493,6 +550,13 @@ class GlobalCamera:
 
     async def _inference_loop(self, model, db_collection):
         """AI inference and tracking loop"""
+
+        # Traffic Stats Variables
+        last_traffic_log_time = time.time()
+        safe_count_buffer = 0
+        violator_count_buffer = 0
+        counted_safe_ids = set()
+        traffic_coll = db_collection.database[setting.TRAFFIC_STATS_COLLECTION]
 
         try:
             while self.is_running:
@@ -509,7 +573,7 @@ class GlobalCamera:
                 source_url = self.camera_sources.get(self.current_source_id, {"url": "0"})["url"]
                 current_imgsz = 416 if not source_url.isdigit() else 640
 
-                self.results = await run_in_threadpool(
+                results = await run_in_threadpool(
                     model.track,
                     frame,
                     persist=True,
@@ -522,20 +586,20 @@ class GlobalCamera:
                     half=True,
                 )
 
-                annotated_frame, latest_all_detections, _ = annotated_helmet_frame(frame, self.results)
+                annotated_frame, latest_all_detections, _ = annotated_helmet_frame(frame, results)
 
                 # Cập nhật bộ đệm stream
                 ret, buffer = cv2.imencode(".jpg", annotated_frame)
                 if ret:
                     self.latest_frame = buffer.tobytes()
 
-                # TÍNH TOÁN FPS (Vẫn tính ở đây nhưng không gửi WebSocket ở đây nữa)
-                self.frame_count += 1
-                elapsed_time = time.time() - self.fps_start_time
+                # TÍNH TOÁN AI FPS
+                self.ai_frame_count += 1
+                elapsed_time = time.time() - self.ai_fps_start_time
                 if elapsed_time >= 1.0: # Mỗi giây gửi một lần
-                    self.fps = round(self.frame_count / elapsed_time, 1)
-                    self.frame_count = 0
-                    self.fps_start_time = time.time()
+                    self.ai_fps = round(self.ai_frame_count / elapsed_time, 1)
+                    self.ai_frame_count = 0
+                    self.ai_fps_start_time = time.time()
 
                 # LOGIC VOTING XÁC NHẬN VI PHẠM
                 confirmed_violators = []
@@ -558,6 +622,7 @@ class GlobalCamera:
                         if len(history) >= 3 and (history.count(1) / len(history)) >= 0.6:
                             confirmed_violators.append(det)
                             self.logged_ids.add(t_id)
+                            violator_count_buffer += 1 # Đồng bộ với Traffic Stats
 
                 if confirmed_violators:
                     asyncio.create_task(
@@ -570,22 +635,60 @@ class GlobalCamera:
                         )
                     )
 
-                # Dọn dẹp track_history để tránh tốn RAM (xóa các ID đã lâu không xuất hiện)
+                # Traffic Stats Aggregation
+                current_ids = {d.track_id for d in latest_all_detections if d.track_id is not None}
+
+                # Xác định người an toàn: Đã rời khỏi khung hình, từng xuất hiện >= 3 frame, và không vi phạm
+                lost_ids = set(self.track_history.keys()) - current_ids
+                for tid in lost_ids:
+                    if tid not in self.logged_ids and tid not in counted_safe_ids:
+                        if len(self.track_history[tid]) >= 3:
+                            counted_safe_ids.add(tid)
+                            safe_count_buffer += 1
+
+                # Dọn dẹp track_history (Fix memory leak: chỉ giữ lại ID đang trên màn hình)
                 if len(self.track_history) > 100:
-                    current_ids = {
-                        d.track_id for d in latest_all_detections if d.track_id is not None
-                    }
                     self.track_history = {
                         tid: hist
                         for tid, hist in self.track_history.items()
-                        if tid in current_ids or tid in self.logged_ids
+                        if tid in current_ids
                     }
+
+                # Gửi lên DB mỗi 60 giây
+                current_time = time.time()
+                if current_time - last_traffic_log_time >= 60.0:
+                    if safe_count_buffer > 0 or violator_count_buffer > 0:
+                        traffic_doc = {
+                            "timestamp": datetime.now(),
+                            "safe_count": safe_count_buffer,
+                            "violation_count": violator_count_buffer
+                        }
+                        asyncio.ensure_future(traffic_coll.insert_one(traffic_doc))
+                        
+                    safe_count_buffer = 0
+                    violator_count_buffer = 0
+                    counted_safe_ids.clear() # Reset set này mỗi phút để giải phóng RAM
+                    last_traffic_log_time = current_time
 
                 await asyncio.sleep(0.001)
         except asyncio.CancelledError:
             logger.info("_inference_loop cancelled.")
         except Exception as e:
             logger.error(f"Inference error: {e}")
+        finally:
+            # Flush on Exit
+            if safe_count_buffer > 0 or violator_count_buffer > 0:
+                try:
+                    traffic_doc = {
+                        "timestamp": datetime.now(),
+                        "safe_count": safe_count_buffer,
+                        "violation_count": violator_count_buffer
+                    }
+                    # Chạy ngầm việc insert để không cản trở quá trình dọn dẹp
+                    asyncio.ensure_future(traffic_coll.insert_one(traffic_doc))
+                    logger.info(f"Flushed final traffic stats before exit: {traffic_doc}")
+                except Exception as e:
+                    logger.error(f"Failed to flush final traffic stats: {e}")
 
     async def _telemetry_heartbeat(self):
         """Dedicated task to send telemetry regardless of AI or Camera state"""
@@ -601,7 +704,8 @@ class GlobalCamera:
                         {
                             "type": "telemetry",
                             "status": self.camera_status,
-                            "fps": self.fps if self.camera_status == "Streaming" else 0,
+                            "fps": self.ai_fps if self.camera_status == "Streaming" else 0,
+                            "capture_fps": self.capture_fps if self.camera_status == "Streaming" else 0,
                             "cam_name": cam_info["name"],
                             "resolution": res_str,
                         }
@@ -620,30 +724,25 @@ class GlobalCamera:
 global_camera = GlobalCamera()
 
 
-async def generated_video_frames(model, db_collection):
+async def generated_video_frames(model, db_collection, viewer_id: str):
     """
-    Asynchronous generator that yields camera frames or placeholders.
-
-    Lifecycle:
-      1. start() → returns a unique session_id for this session.
-      2. Generator streams frames continuously until session is cancelled or superseded.
-      3. finally → stop(session_id) only shuts down the pipeline if the session is still valid.
-         If the user restarts before the old generator exits,
-         the session_id won't match → stop() is ignored, the new pipeline is unaffected.
+    Generator function that yields video frames from the camera.
+    Updates the session stats and logs violations to the database.
     """
-    # KHÔNG reset stop_requested ở đây — start() sẽ tự reset trong lock nếu cần
-    # Reset ở đây gây BUG: generator mới xóa signal → generator cũ thành zombie
-
-    # Nhận session_id → đây là "token" gắn liền với vòng đời của generator này
-    my_session = await global_camera.start(model, db_collection)
-
+    my_session = None
     try:
+        # Nhận session_id → đây là "token" gắn liền với vòng đời của generator này
+        my_session = await global_camera.start(model, db_collection, viewer_id)
+
         while True:
-            # Kiểm tra TRƯỚC khi yield để không gửi frame cũ sau khi đã dừng
-            # 1. Session bị cancel (user bấm tắt)
-            # 2. Session bị thay thế (user bấm tắt rồi bật lại nhanh → session_id mới)
+            # 1. Kiểm tra nếu ID này đã bị xóa khỏi danh sách (do API Stop hoặc lỗi)
+            if viewer_id not in global_camera.active_viewers:
+                logger.info(f"Viewer v_id={viewer_id} no longer in active list. Exiting generator.")
+                break
+
+            # 2. Kiểm tra nếu session hiện tại đã bị cancel hoặc thay thế
             if global_camera._session_cancel_event.is_set() or global_camera._session_id != my_session:
-                logger.info(f"Generator session={my_session} exiting (cancelled or superseded by session={global_camera._session_id})")
+                logger.info(f"Generator session={my_session} exiting (cancelled or superseded)")
                 break
 
             # Ưu tiên lấy frame từ Camera
@@ -660,22 +759,26 @@ async def generated_video_frames(model, db_collection):
 
             await asyncio.sleep(0.03) # Giảm tải cho loop streaming
     finally:
-        # stop() chỉ được gọi DUY NHẤT ở đây
-        # Nếu user đã bấm bật lại → session mới > my_session → stop này bị bỏ qua
-        await global_camera.stop(my_session)
+        # Luôn thực hiện dọn dẹp theo ID khi generator thoát
+        await global_camera.stop(viewer_id, my_session)
 
 
-def stop_video_frames():
-    """Signal the generator to stop gracefully via a flag"""
-    
+async def stop_video_frames(viewer_id: str):
+    """
+    Stop signal from API for a specific viewer.
+    """
     # Xóa frame ngay lập tức để tránh hiện frame cuối bị đóng băng
     global_camera.latest_frame = None
     
-    # Bật cả 2 signal để đảm bảo generator thoát ngay lập tức:
-    # 1. stop_requested: flag tương thích cũ
-    # 2. _session_cancel_event: Event chính xác cho session hiện tại
-    global_camera.stop_requested = True
-    if global_camera._session_cancel_event:
-        global_camera._session_cancel_event.set()
-    
-    logger.info("Stop signal sent to generator. Cancel event SET.")
+    logger.info(f"API Stop request received for v_id={viewer_id}")
+
+    # Xóa viewer khỏi danh sách ngay lập tức. Nếu là người cuối cùng, stop hardware sẽ chạy.
+    await global_camera.stop(viewer_id)
+
+    # Nếu sau khi xóa mà không còn ai xem, set cancel event
+    if len(global_camera.active_viewers) == 0:
+        if global_camera._session_cancel_event:
+            global_camera._session_cancel_event.set()
+        logger.info("ACTION: No active viewers remaining. Hardware shutdown signaled.")
+    else:
+        logger.info(f"ACTION: {len(global_camera.active_viewers)} viewers remaining. Hardware remains ON.")

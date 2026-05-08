@@ -5,10 +5,9 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from ultralytics import YOLO
 
-from SourceCode.BE.app.api import auth_router, helmet_router, report_router, user_router
+from SourceCode.BE.app.api import auth_router, helmet_router, report_router, user_router, alert_router, violations_router
 from SourceCode.BE.app.core.config import setting
 from SourceCode.BE.app.exceptions.handlers import register_exception_handlers
-from SourceCode.BE.app.api import violations_router
 from SourceCode.BE.app.database.sql_database import init_sql_db
 from SourceCode.BE.app.database.nosql_database import connect_to_mongodb, close_mongodb_connection
 from SourceCode.BE.app.core.websocket_manager import manager
@@ -84,6 +83,7 @@ async def health_check():
     return {"status": "healthy"}
 
 app.include_router(helmet_router.router)
+app.include_router(alert_router.router)
 app.include_router(violations_router.router)
 app.include_router(user_router.router)
 app.include_router(auth_router.router)

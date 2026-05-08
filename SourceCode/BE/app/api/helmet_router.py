@@ -8,6 +8,7 @@ from SourceCode.BE.app.schemas.helmet_schema import PredictResponse
 from SourceCode.BE.app.schemas.base_schema import BaseResponse
 from SourceCode.BE.app.dependencies.model import get_model
 from SourceCode.BE.app.dependencies.nosql_database import get_violation_collection
+from SourceCode.BE.app.dependencies.sql_database import SessionDep
 from SourceCode.BE.app.dependencies.user import allow_any_staff, VerifiedUser
 from SourceCode.BE.app.services.video_service import generated_video_frames, stop_video_frames, global_camera
 from SourceCode.BE.app.exceptions.helmet import InvalidFileTypeError, CannotStopCameraError, CameraSwitchError
@@ -68,6 +69,7 @@ async def predict_image(
 
 @router.get("/video-feed", dependencies=[Depends(allow_any_staff)])
 async def video_feed(
+    v_id: str = "anonymous",
     model: YOLO = Depends(get_model),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection),
 ):
@@ -82,16 +84,16 @@ async def video_feed(
     """
     
     return StreamingResponse(
-        generated_video_frames(model, db_collection), 
+        generated_video_frames(model, db_collection, v_id), 
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 @router.post("/stop-video-feed", dependencies=[Depends(allow_any_staff)])
-async def stop_video_feed():
+async def stop_video_feed(v_id: str = "anonymous"):
     """Stop the live video stream."""
 
     try:
-        stop_video_frames()
+        await stop_video_frames(v_id)
         return BaseResponse(
             code=status.HTTP_200_OK, 
             message="Camera stopped successfully", 
@@ -107,6 +109,20 @@ async def get_camera_sources():
         code=status.HTTP_200_OK,
         message="Camera sources retrieved",
         result={"sources": list(global_camera.camera_sources.keys()), "current": global_camera.current_source_id}
+    )
+
+@router.post("/force-stop-camera", dependencies=[Depends(allow_any_staff)])
+async def force_stop_camera(
+    user: VerifiedUser,
+    session: SessionDep
+):
+    """Forcefully clear all active viewers and stop the camera hardware"""
+    
+    await global_camera.force_stop(user, session)
+        
+    return BaseResponse(
+        code=status.HTTP_200_OK,
+        message="Camera forced to stop. All viewer IDs cleared and alert broadcasted."
     )
 
 @router.post("/switch-camera/{source_id}", dependencies=[Depends(allow_any_staff)])

@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     MONGO_URL: str
     DATABASE_NAME: str
     VIOLATION_COLLECTION: str
+    TRAFFIC_STATS_COLLECTION: str
 
     # AI & System 
     MODEL_PATH: str

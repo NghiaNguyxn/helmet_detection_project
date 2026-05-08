@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Camera, AlertCircle, CheckCircle, Shield,
-  Maximize2, RefreshCcw, X, Download,
+  Maximize2, RefreshCcw, X, Download, AlertTriangle, Trash2,
   ChevronLeft, ChevronRight, Activity, ShieldAlert, Target
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -10,6 +10,10 @@ import api, { API_BASE_URL } from '../services/api';
 import socketService from '../services/websocket';
 
 const LiveMonitoring = () => {
+  // Tạo Viewer ID duy nhất cho phiên làm việc này (tránh đếm trùng khi refresh)
+  const [viewerId] = useState(() => `v_${Math.random().toString(36).substring(2, 9)}`);
+  const [searchParams] = useSearchParams();
+
   // Persist camera state to handle tab switching
   const [isCamOn, setIsCamOn] = useState(() => {
     return localStorage.getItem('helmet_cam_active') === 'true';
@@ -45,11 +49,17 @@ const LiveMonitoring = () => {
   const [telemetry, setTelemetry] = useState({
     status: "Inactive",
     fps: 0,
+    capture_fps: 0,
     cam_name: "Detecting...",
     resolution: "N/A"
   });
 
-  // Persisted processed IDs
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [showForceStopModal, setShowForceStopModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+
   const processedLogsRef = useRef(new Set(
     JSON.parse(localStorage.getItem('helmet_processed_ids') || '[]')
   ));
@@ -64,6 +74,7 @@ const LiveMonitoring = () => {
     setTelemetry({
       status: isCamOn ? "Connecting" : "Inactive",
       fps: 0,
+      capture_fps: 0,
       cam_name: "Detecting...",
       resolution: "N/A"
     });
@@ -92,11 +103,12 @@ const LiveMonitoring = () => {
     setIsToggling(true);
     const nextState = !isCamOn;
 
-    // IF WE ARE TURNING IT ON -> Fresh start, reset everything logic
+    // Cập nhật state UI ngay lập tức để gỡ bỏ thẻ <img> và ngắt kết nối stream
+    setIsCamOn(nextState);
+
     if (nextState) {
-      localStorage.removeItem('helmet_session_start');
+      // Bật camera - Khởi tạo lại các thông số session
       localStorage.setItem('helmet_session_start', Date.now().toString());
-      localStorage.setItem('helmet_session_time', '00:00:00');
       localStorage.setItem('helmet_recent_logs', '[]');
 
       // Clear all stats for the new session
@@ -113,18 +125,30 @@ const LiveMonitoring = () => {
     } else {
       // Turning OFF manually - ĐỢI backend xác nhận đã nhận tín hiệu stop
       try {
-        await api.post('/helmet/stop-video-feed');
+        await api.post(`/helmet/stop-video-feed?v_id=${viewerId}`);
       } catch (err) {
         console.warn('Stream stop error:', err);
       }
     }
 
-    setIsCamOn(nextState);
-
     // Cooldown 1s để đảm bảo backend xử lý xong luồng cũ trước khi cho phép bật lại
     setTimeout(() => {
       setIsToggling(false);
     }, 1000);
+  };
+
+  const handleForceStop = async () => {
+    setShowForceStopModal(false);
+    try {
+      const res = await api.post('/helmet/force-stop-camera');
+      if (res.data.code === 200) {
+        setIsCamOn(false);
+        toast.success('Camera system force-reset successfully');
+        setStreamKey(Date.now());
+      }
+    } catch (err) {
+      toast.error('Failed to reset camera');
+    }
   };
 
   const handleResetSession = () => {
@@ -185,7 +209,8 @@ const LiveMonitoring = () => {
   useEffect(() => {
     // 1. Fetch only if we don't have recent logs
     const initialFetch = async () => {
-      if (recentLogs.length > 0) return;
+      // Vẫn lấy dữ liệu từ cache hiện có trước cho nhanh (Optimistic UI)
+      // Nhưng luôn gọi API để lấy bản mới nhất
       try {
         const res = await api.get('/violations/?limit=3');
         if (res.data && res.data.code === 200 && res.data.result) {
@@ -207,6 +232,7 @@ const LiveMonitoring = () => {
         setTelemetry({
           status: message.status,
           fps: message.fps,
+          capture_fps: message.capture_fps,
           cam_name: message.cam_name,
           resolution: message.resolution
         });
@@ -222,6 +248,11 @@ const LiveMonitoring = () => {
           if (prev.some(log => (log.id || log._id) === (newViolation.id || newViolation._id))) return prev;
           return [newViolation, ...prev.slice(0, 2)];
         });
+      }
+
+      if (message.event === 'delete_violation') {
+        const { id } = message.data;
+        setRecentLogs(prev => prev.filter(log => (log.id || log._id) !== id));
       }
     });
 
@@ -263,6 +294,14 @@ const LiveMonitoring = () => {
     fetchSources();
   }, []);
 
+  // Handle URL param switching
+  useEffect(() => {
+    const camId = searchParams.get('cam');
+    if (camId && cameraSources.length > 0 && cameraSources.includes(camId) && camId !== currentCam) {
+      handleSwitchCamera(camId);
+    }
+  }, [searchParams, cameraSources]);
+
   const handleSwitchCamera = async (sourceId) => {
     if (sourceId === currentCam || isSwitching) return;
 
@@ -279,6 +318,82 @@ const LiveMonitoring = () => {
     } finally {
       // Giữ trạng thái loading thêm một chút để mượt mà
       setTimeout(() => setIsSwitching(false), 1000);
+    }
+  };
+
+  const handleDownloadImage = async (imageUrl, id) => {
+    const toastId = toast.loading('Preparing image for download...');
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const fileName = `Violation_${id || Date.now()}.jpg`;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Image downloaded successfully', { id: toastId });
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error('Download failed. Opening in new tab...', { id: toastId });
+      window.open(imageUrl, '_blank');
+    }
+  };
+
+  const handleDeleteEntry = async () => {
+    if (selectedImageIndex === null) return;
+    const entry = recentLogs[selectedImageIndex];
+    const id = entry._id || entry.id;
+
+    setShowDeleteConfirmModal(false);
+    try {
+      const res = await api.delete(`/violations/${id}`);
+      if (res.data.code === 200) {
+        toast.success('Record deleted from database');
+
+        const updatedLogs = recentLogs.filter((_, index) => index !== selectedImageIndex);
+        setRecentLogs(updatedLogs);
+        localStorage.setItem('helmet_recent_logs', JSON.stringify(updatedLogs));
+
+        if (updatedLogs.length === 0) {
+          setSelectedImageIndex(null);
+        } else if (selectedImageIndex >= updatedLogs.length) {
+          setSelectedImageIndex(updatedLogs.length - 1);
+        }
+      }
+    } catch (err) {
+      if (err.response?.status === 403) {
+        toast.error('Unauthorized: Admin access required to delete');
+      } else {
+        toast.error('Failed to delete record');
+      }
+      console.error(err);
+    }
+  };
+
+  const handleSendAlert = async () => {
+    if (!broadcastMessage.trim() || isBroadcasting) return;
+
+    setIsBroadcasting(true);
+    try {
+      const res = await api.post('/alerts/broadcast', {
+        message: broadcastMessage,
+        camera_id: currentCam
+      });
+
+      if (res.data.code === 200) {
+        toast.success('Broadcast alert sent successfully');
+        setShowBroadcastModal(false);
+        setBroadcastMessage('');
+      }
+    } catch (err) {
+      toast.error('Failed to send broadcast alert');
+      console.error(err);
+    } finally {
+      setIsBroadcasting(false);
     }
   };
 
@@ -347,6 +462,13 @@ const LiveMonitoring = () => {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={() => setShowForceStopModal(true)}
+            title="Force Reset Camera (Use if stuck)"
+            className="p-2.5 bg-surface-low hover:bg-error/10 border border-on-surface/10 rounded-md transition-all text-on-surface-variant hover:text-error"
+          >
+            <RefreshCcw className="w-4 h-4" />
+          </button>
+          <button
             onClick={toggleCamera}
             disabled={isToggling}
             className={`flex items-center gap-2 px-6 py-2.5 font-bold rounded-md text-[10px] uppercase tracking-widest transition-all ${isToggling ? 'opacity-50 cursor-not-allowed bg-surface-variant text-on-surface-variant' :
@@ -371,7 +493,7 @@ const LiveMonitoring = () => {
                 <img
                   ref={imgRef}
                   crossOrigin="anonymous"
-                  src={`${API_BASE_URL}/helmet/video-feed?token=${localStorage.getItem('token') || ''}&t=${currentCam}&k=${streamKey}`}
+                  src={`${API_BASE_URL}/helmet/video-feed?v_id=${viewerId}&token=${localStorage.getItem('token') || ''}&t=${currentCam}&k=${streamKey}`}
                   alt="Live Stream"
                   className={`w-full h-full object-cover transition-opacity duration-500 ${isSwitching ? 'opacity-30' : 'opacity-100'}`}
                   onError={(e) => {
@@ -441,8 +563,12 @@ const LiveMonitoring = () => {
             <button onClick={handleManualCapture} disabled={!isCamOn} className={`flex-1 flex items-center justify-center gap-3 py-4 rounded-md border border-on-surface/5 transition-all font-bold uppercase tracking-widest text-[10px] ${isCamOn ? 'bg-surface hover:border-primary/30 cursor-pointer text-on-surface' : 'bg-surface-variant/20 opacity-50 cursor-not-allowed text-on-surface-variant'}`}>
               <Camera className={`w-4 h-4 ${isCamOn ? 'text-primary' : 'text-on-surface-variant'}`} /> Manual Capture
             </button>
-            <button disabled className="flex-1 flex items-center justify-center gap-3 py-4 bg-surface rounded-md border border-on-surface/5 transition-all font-bold uppercase tracking-widest text-[10px] opacity-30 cursor-not-allowed">
-              <AlertCircle className="w-4 h-4 text-error" /> Broadcast Alert
+            <button
+              onClick={() => setShowBroadcastModal(true)}
+              disabled={!isCamOn}
+              className={`flex-1 flex items-center justify-center gap-3 py-4 rounded-md border border-on-surface/5 transition-all font-bold uppercase tracking-widest text-[10px] ${isCamOn ? 'bg-surface hover:border-error/30 text-on-surface' : 'bg-surface-variant/20 opacity-50 cursor-not-allowed text-on-surface-variant'}`}
+            >
+              <AlertCircle className={`w-4 h-4 ${isCamOn ? 'text-error animate-pulse' : 'text-on-surface-variant'}`} /> Broadcast Alert
             </button>
           </div>
         </div>
@@ -502,11 +628,19 @@ const LiveMonitoring = () => {
                   <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest opacity-60">Active Source</span>
                   <span className="text-[10px] font-bold font-mono text-primary uppercase">{telemetry.cam_name}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest opacity-60">Performance</span>
-                  <span className="text-[10px] font-bold font-mono text-on-surface">
-                    {telemetry.fps} FPS <span className="opacity-40 ml-1">@{telemetry.resolution}</span>
-                  </span>
+                <div className="flex items-start justify-between">
+                  <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest opacity-60 pt-0.5">Performance</span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-[10px] font-bold font-mono text-on-surface">
+                      <span className="text-primary/80">AI:</span> {Number(telemetry.fps || 0).toFixed(1)} FPS
+                    </span>
+                    <span className="text-[10px] font-bold font-mono text-on-surface">
+                      <span className="text-primary/80">CAP:</span> {Number(telemetry.capture_fps || 0).toFixed(1)} FPS
+                    </span>
+                    <span className="text-[9px] font-mono text-on-surface-variant opacity-60">
+                      @{telemetry.resolution}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -529,7 +663,7 @@ const LiveMonitoring = () => {
                     <div>
                       <p className="text-[10px] font-bold text-on-surface uppercase leading-tight">Violation</p>
                       <p className="text-[9px] text-on-surface-variant font-mono mt-0.5 opacity-60">
-                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {log.camera_id || 'ENT-01'}
+                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {log.camera_id || 'CAM_1'}
                       </p>
                     </div>
                   </div>
@@ -544,21 +678,21 @@ const LiveMonitoring = () => {
 
         {/* Enlarged Image Modal */}
         {selectedImageIndex !== null && recentLogs[selectedImageIndex] && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-200">
-            <div className="absolute inset-0 bg-background/98 backdrop-blur-2xl" onClick={() => setSelectedImageIndex(null)}></div>
+          <div className="fixed inset-0 w-screen h-screen z-50 flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-200">
+            <div className="absolute inset-0 bg-background/95 backdrop-blur-xl" onClick={() => setSelectedImageIndex(null)}></div>
 
             <div className="relative max-w-full max-h-full flex flex-col items-center">
               {/* Navigation Controls */}
               <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none px-4 md:-mx-24">
                 <button
                   onClick={handlePrevImage}
-                  className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-lg border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto"
+                  className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-lg border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto shadow-2xl"
                 >
                   <ChevronLeft className="w-6 h-6" />
                 </button>
                 <button
                   onClick={handleNextImage}
-                  className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-lg border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto"
+                  className="w-12 h-12 rounded-full bg-surface/50 backdrop-blur-lg border border-on-surface/10 flex items-center justify-center text-on-surface hover:bg-primary hover:text-background transition-all pointer-events-auto shadow-2xl"
                 >
                   <ChevronRight className="w-6 h-6" />
                 </button>
@@ -566,16 +700,16 @@ const LiveMonitoring = () => {
 
               <button
                 onClick={() => setSelectedImageIndex(null)}
-                className="absolute -top-12 right-0 p-2 text-on-surface-variant hover:text-on-surface transition-all flex items-center gap-2 text-[9px] font-mono tracking-widest uppercase cursor-pointer"
+                className="fixed top-6 right-6 p-3 bg-surface/50 backdrop-blur-md border border-on-surface/10 rounded-full text-on-surface hover:bg-primary hover:text-background transition-all flex items-center gap-2 text-xs font-mono tracking-widest uppercase cursor-pointer shadow-lg"
               >
                 Close <X className="w-5 h-5" />
               </button>
 
-              <div className="surface-1 border border-primary/20 p-1 rounded-md shadow-2xl relative overflow-hidden group">
+              <div className="surface-1 border border-primary/20 p-1 rounded-md shadow-[0_0_50px_rgba(var(--primary-rgb),0.2)] relative overflow-hidden group">
                 <img
                   src={recentLogs[selectedImageIndex].image_url}
                   alt="Enlarged Intelligence"
-                  className="max-w-full max-h-[75vh] object-contain rounded"
+                  className="max-w-full max-h-[75vh] w-auto h-auto object-contain rounded"
                 />
                 <div className="absolute top-4 left-4 flex gap-2">
                   <div className="bg-primary/20 backdrop-blur-md px-3 py-1 rounded border border-primary/30">
@@ -596,19 +730,162 @@ const LiveMonitoring = () => {
                 </div>
               </div>
 
-              <div className="mt-8">
-                <a
-                  href={recentLogs[selectedImageIndex].image_url}
-                  download
-                  className="flex items-center gap-3 px-10 py-4 bg-primary text-background font-bold rounded-md text-[10px] hover:bg-primary-variant transition-all uppercase tracking-[0.2em] shadow-xl"
+              <div className="mt-8 flex justify-center gap-6">
+                <button
+                  onClick={() => handleDownloadImage(recentLogs[selectedImageIndex].image_url, recentLogs[selectedImageIndex]._id || recentLogs[selectedImageIndex].id)}
+                  className="flex items-center justify-center w-16 h-16 bg-primary text-background font-bold rounded-xl hover:bg-primary-variant transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)] cursor-pointer group"
+                  title="Export Intelligence"
                 >
-                  <Download className="w-4 h-4" /> Export Intelligence
-                </a>
+                  <Download className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                </button>
+
+                <button
+                  onClick={() => setShowDeleteConfirmModal(true)}
+                  className="flex items-center justify-center w-16 h-16 bg-surface-highest hover:bg-error hover:text-background text-error font-bold rounded-xl transition-all shadow-xl cursor-pointer border border-error/20 group"
+                  title="Delete this record"
+                >
+                  <Trash2 className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                </button>
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Broadcast Alert Modal */}
+      {showBroadcastModal && (
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-xl" onClick={() => setShowBroadcastModal(false)}></div>
+          <div className="relative w-full max-w-md surface-2 border border-error/20 rounded-lg p-8 tech-glow animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-12 h-12 bg-error/10 rounded-full flex items-center justify-center border border-error/20">
+                <AlertCircle className="w-6 h-6 text-error animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-on-surface uppercase tracking-widest">Emergency Broadcast</h3>
+                <p className="text-[10px] text-on-surface-variant font-mono uppercase tracking-widest opacity-60">Source: {currentCam}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-mono uppercase text-on-surface-variant tracking-widest block mb-2">Alert Message</label>
+                <textarea
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  placeholder="Enter emergency message here..."
+                  className="w-full bg-surface border border-on-surface/10 rounded-md p-4 text-sm text-on-surface outline-none focus:border-error/50 transition-all min-h-[120px] resize-none"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-6">
+                {['Security Threat', 'Fire Hazard', 'Safety Violation', 'Equipment Failure'].map(preset => (
+                  <button
+                    key={preset}
+                    onClick={() => setBroadcastMessage(preset)}
+                    className="px-2 py-1 bg-surface-highest/50 hover:bg-surface-highest text-[8px] font-bold uppercase tracking-widest rounded border border-on-surface/5 transition-all"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-on-surface/5">
+                <button
+                  onClick={() => setShowBroadcastModal(false)}
+                  className="flex-1 py-3 bg-surface text-on-surface-variant font-bold uppercase tracking-widest text-[10px] rounded-md hover:bg-surface-low transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendAlert}
+                  disabled={!broadcastMessage.trim() || isBroadcasting}
+                  className="flex-1 py-3 bg-error text-background font-bold uppercase tracking-widest text-[10px] rounded-md primary-glow hover:bg-error/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isBroadcasting ? <RefreshCcw className="w-3 h-3 animate-spin" /> : null}
+                  Send Broadcast
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Force Stop Confirmation Modal */}
+      {showForceStopModal && (
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-surface border border-error/20 rounded-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center border border-error/20">
+                  <AlertTriangle className="w-6 h-6 text-error animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-on-surface uppercase tracking-tight">Force System Reset</h3>
+                  <p className="text-xs text-on-surface-variant font-mono uppercase tracking-widest opacity-60">Security Protocol AX-Reset</p>
+                </div>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <p className="text-sm text-on-surface-variant leading-relaxed">
+                  This action will <span className="text-error font-bold">terminate all active viewer sessions</span> and force the camera hardware to shutdown.
+                </p>
+                <div className="p-3 bg-surface-lowest rounded border border-on-surface/5">
+                  <p className="text-[10px] text-on-surface-variant/60 font-mono italic">
+                    Note: A system-wide alert will be broadcasted to notify all users of this manual override.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowForceStopModal(false)}
+                  className="flex-1 py-3 bg-surface-highest hover:bg-on-surface/10 text-on-surface font-bold rounded-md transition-all text-[10px] uppercase tracking-[0.2em]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleForceStop}
+                  className="flex-1 py-3 bg-error text-background hover:bg-error/90 font-bold rounded-md transition-all text-[10px] uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(var(--error-rgb),0.4)]"
+                >
+                  Force Shutdown
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmModal && (
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-sm bg-surface border border-error/20 rounded-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 rounded-full bg-error/10 flex items-center justify-center border border-error/20 mx-auto mb-4">
+                <Trash2 className="w-8 h-8 text-error" />
+              </div>
+              <h3 className="text-lg font-bold text-on-surface uppercase tracking-tight mb-2">Delete Intelligence?</h3>
+              <p className="text-sm text-on-surface-variant mb-6">
+                Are you sure you want to permanently remove this violation record from the secure database?
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirmModal(false)}
+                  className="flex-1 py-3 bg-surface-highest hover:bg-on-surface/10 text-on-surface font-bold rounded-md transition-all text-[10px] uppercase tracking-[0.2em]"
+                >
+                  Keep
+                </button>
+                <button
+                  onClick={handleDeleteEntry}
+                  className="flex-1 py-3 bg-error text-background hover:bg-error/90 font-bold rounded-md transition-all text-[10px] uppercase tracking-[0.2em]"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

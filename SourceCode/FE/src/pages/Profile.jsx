@@ -64,12 +64,12 @@ const Profile = () => {
 
     // Check file type and size
     if (!file.type.startsWith('image/')) {
-        toast.error('Please select an image file');
-        return;
+      toast.error('Please select an image file');
+      return;
     }
     if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size must be less than 5MB');
-        return;
+      toast.error('Image size must be less than 5MB');
+      return;
     }
 
     const formData = new FormData();
@@ -77,7 +77,7 @@ const Profile = () => {
 
     setUploading(true);
     const toastId = toast.loading('Uploading biometric identity...');
-    
+
     try {
       const response = await api.patch('/users/me/avatar', formData, {
         headers: {
@@ -235,21 +235,21 @@ const Profile = () => {
 
             <div className="flex flex-col items-center text-center space-y-4 relative">
               {/* Avatar Section */}
-              <div 
+              <div
                 className="relative cursor-pointer group/avatar"
                 onClick={handleAvatarClick}
               >
                 <div className="w-32 h-32 rounded-lg bg-surface flex items-center justify-center border-2 border-primary/30 text-primary text-4xl font-bold primary-glow mb-2 overflow-hidden">
                   {user?.avatar_url ? (
-                    <img 
-                      src={user.avatar_url} 
-                      alt="Avatar" 
-                      className="w-full h-full object-cover group-hover/avatar:scale-110 transition-transform duration-500" 
+                    <img
+                      src={user.avatar_url}
+                      alt="Avatar"
+                      className="w-full h-full object-cover group-hover/avatar:scale-110 transition-transform duration-500"
                     />
                   ) : (
                     (user?.full_name || user?.username || 'U').slice(0, 2).toUpperCase()
                   )}
-                  
+
                   {/* Upload Overlay */}
                   <div className="absolute inset-0 bg-background/60 flex flex-col items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-300">
                     {uploading ? (
@@ -262,12 +262,12 @@ const Profile = () => {
                     )}
                   </div>
                 </div>
-                
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileChange} 
-                  className="hidden" 
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
                   accept="image/*"
                 />
               </div>

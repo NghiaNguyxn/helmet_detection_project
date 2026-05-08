@@ -9,7 +9,7 @@ import logging
 
 from SourceCode.BE.app.services.upload_service import upload_image_to_cloudinary
 from SourceCode.BE.app.schemas.helmet_schema import Detection, ViolationHistoryResponse, ViolationRecord
-from SourceCode.BE.app.core.websocket_manager import WebSocketManager
+from SourceCode.BE.app.core.websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,13 @@ async def delete_violation(db_collection: AsyncIOMotorCollection, violation_id: 
     """Delete a violation record by ID"""
     
     result = await db_collection.delete_one({"_id": ObjectId(violation_id)})
+    if result.deleted_count > 0:
+        # Broadcast để các tab khác xóa cache/UI
+        await manager.broadcast({
+            "event": "delete_violation",
+            "data": {"id": violation_id}
+        })
+
     return result.deleted_count > 0
 
 async def export_violations_to_excel(
@@ -147,7 +154,7 @@ async def save_violation_backtask(
         violation_count: int, 
         all_detections: list[Detection], 
         db_collection: AsyncIOMotorCollection,
-        websocket_manager: WebSocketManager | None = None
+        websocket_manager: manager
     ):
     """Background task for saving violation record"""
 
@@ -163,7 +170,8 @@ async def save_violation_backtask(
             total_violations=violation_count,
             detections=[d for d in all_detections if d.class_id == 1]  # Chỉ lưu detections vi phạm (không đội mũ)
         )
-        inserted_doc = violation_doc.model_dump()
+        # Chuyển đổi sang dict nhưng loại bỏ trường 'id' vì MongoDB sẽ tự tạo '_id'
+        inserted_doc = violation_doc.model_dump(exclude={'id'})
         await db_collection.insert_one(inserted_doc)
         
         # Gán ID vừa tạo vào doc trước khi gửi qua WebSocket

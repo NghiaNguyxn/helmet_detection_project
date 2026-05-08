@@ -2,7 +2,7 @@ from ultralytics import YOLO
 import os
 
 # Đường dẫn file mô hình gốc .pt
-pt_model_path = r"D:\Python\helmet_detection_project\SourceCode\BE\app\weights\best_s.pt"
+pt_model_path = r"D:\Python\helmet_detection_project\runs\detect\helmet_s_200\weights\best.pt"
 
 # Khởi tạo mô hình
 print(f"Loading model from {pt_model_path}...")

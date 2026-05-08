@@ -9,10 +9,7 @@ const Header = () => {
   const { user } = useAuth();
   const [wsStatus, setWsStatus] = useState('connecting');
   const [showNotifications, setShowNotifications] = useState(false);
-  const [recentAlerts, setRecentAlerts] = useState(() => {
-    const saved = localStorage.getItem('helmet_header_alerts');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [recentAlerts, setRecentAlerts] = useState([]);
   const [unreadCount, setUnreadCount] = useState(() => {
     return parseInt(localStorage.getItem('helmet_header_unread') || '0');
   });
@@ -30,13 +27,10 @@ const Header = () => {
 
   useEffect(() => {
     const fetchInitialAlerts = async () => {
-      // Chỉ fetch nếu chưa có data lưu trữ
-      if (recentAlerts.length > 0) return;
-      
       try {
-        const res = await api.get('/violations/?limit=3');
+        const res = await api.get('/alerts/history?limit=10');
         if (res.data.code === 200) {
-          const data = res.data.result.data || [];
+          const data = res.data.result || [];
           setRecentAlerts(data);
         }
       } catch (e) { }
@@ -46,18 +40,19 @@ const Header = () => {
     socketService.connect();
 
     const unsubscribeAlerts = socketService.subscribe((message) => {
-      if (message.event === 'new_violation') {
-        const newViolation = message.data;
-        setRecentAlerts(prev => [newViolation, ...prev.slice(0, 2)]);
+      if (message.event === 'security_alert') {
+        const newAlert = message.data;
+        setRecentAlerts(prev => [newAlert, ...prev.slice(0, 9)]);
         setUnreadCount(prev => prev + 1);
+
+        // Phát âm thanh cảnh báo nhẹ nếu muốn (tùy chọn)
+        // new Audio('/alert.mp3').play();
       }
     });
 
-    // Reset logic when camera is toggled (detected via localStorage change)
     const handleStorageChange = (e) => {
       if (e.key === 'helmet_session_start') {
         setUnreadCount(0);
-        setRecentAlerts([]);
       }
     };
     window.addEventListener('storage', handleStorageChange);
@@ -81,9 +76,9 @@ const Header = () => {
   };
 
   const handleNotificationClick = (alert) => {
-    const alertId = alert.id || alert._id;
     setShowNotifications(false);
-    navigate(`/violations?id=${alertId}`);
+    // Điều hướng về trang giám sát và chọn camera tương ứng
+    navigate(`/live-monitoring?cam=${alert.camera_id}`);
   };
 
   useEffect(() => {
@@ -148,28 +143,26 @@ const Header = () => {
               </div>
               <div className="max-h-[400px] overflow-y-auto">
                 {recentAlerts.length > 0 ? recentAlerts.map(alert => (
-                  <div 
-                    key={alert.id || alert._id} 
+                  <div
+                    key={alert.id || alert._id}
                     onClick={() => handleNotificationClick(alert)}
                     className="px-5 py-4 border-b border-on-surface/5 hover:bg-surface-low transition-all cursor-pointer flex gap-4 group"
                   >
-                    {alert.image_url ? (
-                      <div className="w-12 h-12 rounded bg-on-surface/5 overflow-hidden shrink-0 border border-on-surface/10 group-hover:border-primary/30 transition-all">
-                        <img src={alert.image_url} alt="Violation" className="w-full h-full object-cover" />
-                      </div>
-                    ) : (
-                      <div className="w-10 h-10 rounded-lg bg-on-surface/5 flex items-center justify-center shrink-0 border border-on-surface/5 group-hover:border-primary/30 transition-all">
-                        <ShieldAlert className="w-5 h-5 text-on-surface-variant group-hover:text-primary" />
-                      </div>
-                    )}
+                    <div className="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center shrink-0 border border-error/20 group-hover:border-error/40 transition-all shadow-[0_0_15px_rgba(var(--error-rgb),0.1)]">
+                      <ShieldAlert className="w-5 h-5 text-error animate-pulse" />
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-bold text-on-surface group-hover:text-primary transition-colors truncate">
-                        {alert.total_violations} Violation{alert.total_violations > 1 ? 's' : ''} at Main Gate
+                      <div className="flex justify-between items-start mb-0.5">
+                        <p className="text-[11px] font-bold text-on-surface group-hover:text-error transition-colors uppercase tracking-wider">
+                          Broadcast from {alert.sender_name}
+                        </p>
+                        <span className="text-[9px] font-mono text-primary font-bold">{formatRelativeTime(alert.timestamp)}</span>
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant leading-relaxed line-clamp-2">
+                        {alert.message}
                       </p>
-                      <p className="text-[10px] text-on-surface-variant font-mono mt-1 flex items-center gap-2">
-                        <span className="text-primary font-bold">{formatRelativeTime(alert.timestamp)}</span>
-                        <span className="w-1 h-1 bg-on-surface-variant/30 rounded-full"></span>
-                        <span className="truncate">ID: {String(alert.id || alert._id).slice(-6).toUpperCase()}</span>
+                      <p className="text-[8px] font-mono text-on-surface-variant opacity-40 mt-1.5 uppercase tracking-widest">
+                        Location: {alert.camera_id}
                       </p>
                     </div>
                   </div>
@@ -180,16 +173,6 @@ const Header = () => {
                   </div>
                 )}
               </div>
-              {recentAlerts.length > 0 && (
-                <div 
-                  onClick={() => { setShowNotifications(false); navigate('/violations'); }}
-                  className="px-5 py-3 text-center border-t border-on-surface/5 hover:bg-surface-low transition-all cursor-pointer"
-                >
-                  <button className="text-[10px] text-primary hover:text-primary/80 uppercase tracking-[0.2em] font-bold cursor-pointer transition-all flex items-center justify-center gap-2 w-full">
-                    See all notifications <ChevronRight className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>

@@ -18,7 +18,7 @@ const VerifyEmail = () => {
 
   useEffect(() => {
     if (hasRun.current) return;
-    
+
     const token = searchParams.get('token');
 
     if (!token) {
@@ -37,7 +37,7 @@ const VerifyEmail = () => {
           login(response.data.result.access_token);
           setStatus('success');
           setMessage(response.data.message || 'Your account has been verified successfully.');
-          
+
           // Auto redirect after 3 seconds is handled by another effect
         } else {
           setStatus('error');
@@ -131,9 +131,9 @@ const VerifyEmail = () => {
                 <p className="text-sm font-bold text-secondary uppercase tracking-wider">Verification Complete</p>
                 <p className="text-xs text-on-surface-variant mt-2 max-w-xs">{message}</p>
                 <div className="mt-4 p-2 bg-secondary/5 border border-secondary/10 rounded-md">
-                   <p className="text-[10px] font-mono text-secondary uppercase tracking-widest">
-                     Redirecting to dashboard in {countdown}s...
-                   </p>
+                  <p className="text-[10px] font-mono text-secondary uppercase tracking-widest">
+                    Redirecting to dashboard in {countdown}s...
+                  </p>
                 </div>
               </div>
               <button

@@ -84,8 +84,9 @@ const ViolationHistory = () => {
       const isThumbnail = e.target.closest('.evidence-thumbnail');
       const isModal = e.target.closest('.violation-modal-content');
       const isDeleteModal = e.target.closest('.delete-modal-content');
+      const isModalBg = e.target.closest('.violation-modal-bg');
 
-      if (!isThumbnail && !isModal && !isDeleteModal) {
+      if (!isThumbnail && !isModal && !isDeleteModal && !isModalBg) {
         setActiveHighlightId(null);
         if (urlHighlightId) setSearchParams({});
       }
@@ -187,6 +188,29 @@ const ViolationHistory = () => {
     setTimeout(() => fetchViolations(), 0);
   };
 
+  const handleDownloadImage = async (imageUrl, id) => {
+    const toastId = toast.loading('Preparing image for download...');
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      // Đặt tên file theo ID vi phạm
+      const fileName = `Violation_${id || Date.now()}.jpg`;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Image downloaded successfully', { id: toastId });
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error('Download failed. Opening in new tab...', { id: toastId });
+      window.open(imageUrl, '_blank');
+    }
+  };
+
   const handleExportExcel = async () => {
     try {
       const params = new URLSearchParams();
@@ -205,7 +229,7 @@ const ViolationHistory = () => {
       link.setAttribute('download', `Violation_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
       document.body.appendChild(link);
       link.click();
-      link.remove();
+      document.body.removeChild(link);
       toast.success('Report exported successfully');
     } catch (error) {
       console.error('Export failed:', error);
@@ -243,6 +267,8 @@ const ViolationHistory = () => {
     if (selectedViolationIndex === null) return;
     const nextIdx = (selectedViolationIndex + 1) % violations.length;
     setSelectedViolationIndex(nextIdx);
+    const nextId = violations[nextIdx].id || violations[nextIdx]._id;
+    setActiveHighlightId(nextId);
   };
 
   const handlePrevImage = (e) => {
@@ -250,6 +276,8 @@ const ViolationHistory = () => {
     if (selectedViolationIndex === null) return;
     const prevIdx = (selectedViolationIndex - 1 + violations.length) % violations.length;
     setSelectedViolationIndex(prevIdx);
+    const prevId = violations[prevIdx].id || violations[prevIdx]._id;
+    setActiveHighlightId(prevId);
   };
 
   return (
@@ -461,8 +489,8 @@ const ViolationHistory = () => {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-widest border ${violation.total_violations > 0
-                            ? 'bg-error/10 text-error border-error/20'
-                            : 'bg-secondary/10 text-secondary border-secondary/20'
+                          ? 'bg-error/10 text-error border-error/20'
+                          : 'bg-secondary/10 text-secondary border-secondary/20'
                           }`}>
                           {violation.total_violations} {violation.total_violations > 1 ? 'Violators' : 'Violator'}
                         </span>
@@ -496,15 +524,16 @@ const ViolationHistory = () => {
                                 <span className="text-[8px] font-mono text-on-surface-variant uppercase tracking-widest opacity-50">Actions</span>
                               </div>
 
-                              <a
-                                href={violation.image_url}
-                                download
-                                className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-bold uppercase font-mono text-on-surface hover:bg-primary/10 hover:text-primary transition-all text-left"
-                                onClick={() => setActiveMenuId(null)}
+                              <button
+                                onClick={() => {
+                                  handleDownloadImage(violation.image_url, vId);
+                                  setActiveMenuId(null);
+                                }}
+                                className="w-full flex items-center justify-between px-4 py-3 text-[10px] font-bold uppercase font-mono text-on-surface hover:bg-primary/10 hover:text-primary transition-all text-left"
                               >
-                                <Download className="w-3.5 h-3.5" />
                                 <span>Download</span>
-                              </a>
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
 
                               {currentUser?.role === 'admin' && (
                                 <button
@@ -577,8 +606,8 @@ const ViolationHistory = () => {
                       key={pNum}
                       onClick={() => setPage(pNum)}
                       className={`w-8 h-8 rounded text-[10px] font-bold transition-all ${page === pNum
-                          ? 'bg-primary text-background shadow-lg shadow-primary/20'
-                          : 'text-on-surface-variant hover:text-on-surface hover:bg-surface'
+                        ? 'bg-primary text-background shadow-lg shadow-primary/20'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface'
                         }`}
                     >
                       {pNum}
@@ -605,8 +634,8 @@ const ViolationHistory = () => {
 
       {/* Full Image Modal */}
       {selectedViolationIndex !== null && violations[selectedViolationIndex] && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-200">
-          <div className="absolute inset-0 bg-background/95 backdrop-blur-xl" onClick={() => setSelectedViolationIndex(null)}></div>
+        <div className="fixed inset-0 w-screen h-screen z-50 flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-200">
+          <div className="violation-modal-bg absolute inset-0 bg-background/95 backdrop-blur-xl" onClick={() => setSelectedViolationIndex(null)}></div>
 
           <div className="violation-modal-content relative max-w-full max-h-full flex flex-col items-center">
             {/* Nav Arrows */}
@@ -627,7 +656,7 @@ const ViolationHistory = () => {
 
             <button
               onClick={() => setSelectedViolationIndex(null)}
-              className="absolute -top-12 right-0 p-2 text-on-surface-variant hover:text-on-surface transition-all flex items-center gap-2 text-[10px] font-mono tracking-widest uppercase cursor-pointer"
+              className="fixed top-6 right-6 p-3 bg-surface/50 backdrop-blur-md border border-on-surface/10 rounded-full text-on-surface hover:bg-primary hover:text-background transition-all flex items-center gap-2 text-xs font-mono tracking-widest uppercase cursor-pointer shadow-lg"
             >
               Close <X className="w-5 h-5" />
             </button>
@@ -635,7 +664,7 @@ const ViolationHistory = () => {
               <img
                 src={violations[selectedViolationIndex].image_url}
                 alt="Full Evidence"
-                className="max-w-full max-h-[80vh] object-contain rounded"
+                className="max-w-full max-h-[75vh] w-auto h-auto object-contain rounded"
               />
               <div className="absolute top-0 left-0 w-full p-4 flex justify-between pointer-events-none">
                 <div className="bg-primary/10 backdrop-blur-md px-3 py-1 rounded border border-primary/20 flex flex-col gap-1">
@@ -659,14 +688,28 @@ const ViolationHistory = () => {
               </div>
             </div>
 
-            <div className="mt-6 flex gap-4">
-              <a
-                href={violations[selectedViolationIndex].image_url}
-                download
-                className="flex items-center gap-2 px-8 py-3 bg-primary text-background font-bold rounded-md text-[10px] hover:bg-primary/90 transition-all uppercase tracking-[0.2em] shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)] cursor-pointer"
+            <div className="mt-8 flex justify-center gap-6">
+              <button
+                onClick={() => handleDownloadImage(violations[selectedViolationIndex].image_url, violations[selectedViolationIndex].id || violations[selectedViolationIndex]._id)}
+                className="flex items-center justify-center w-16 h-16 bg-primary text-background font-bold rounded-xl hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)] cursor-pointer group"
+                title="Export Record Image"
               >
-                <Download className="w-4 h-4" /> Save Record Image
-              </a>
+                <Download className="w-6 h-6 group-hover:scale-110 transition-transform" />
+              </button>
+
+              {currentUser?.role === 'admin' && (
+                <button
+                  onClick={() => {
+                    const id = violations[selectedViolationIndex].id || violations[selectedViolationIndex]._id;
+                    setDeleteConfirmId(id);
+                    setSelectedViolationIndex(null);
+                  }}
+                  className="flex items-center justify-center w-16 h-16 bg-surface-highest hover:bg-error hover:text-background text-error font-bold rounded-xl transition-all shadow-xl cursor-pointer border border-error/20 group"
+                  title="Delete this record"
+                >
+                  <Trash2 className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                </button>
+              )}
             </div>
           </div>
         </div>

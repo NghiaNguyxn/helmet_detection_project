@@ -15,7 +15,7 @@ const ResetPassword = () => {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // 'form' | 'success' | 'error'
   const [pageStatus, setPageStatus] = useState(token ? 'form' : 'error');
   const [errorMessage, setErrorMessage] = useState(token ? '' : 'No reset token found. The link may be incomplete or expired.');
@@ -42,7 +42,7 @@ const ResetPassword = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!passwordsMatch || !passwordLongEnough) return;
-    
+
     setIsSubmitting(true);
     setErrorMessage('');
 
@@ -150,13 +150,12 @@ const ResetPassword = () => {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Confirm new password"
                     required
-                    className={`w-full pl-10 pr-12 py-3 bg-surface rounded-md border transition-all text-sm text-on-surface focus:outline-none ${
-                      showMismatch
+                    className={`w-full pl-10 pr-12 py-3 bg-surface rounded-md border transition-all text-sm text-on-surface focus:outline-none ${showMismatch
                         ? 'border-error/50 focus:border-error/70'
                         : passwordsMatch
                           ? 'border-secondary/40 focus:border-secondary/60'
                           : 'border-on-surface/5 focus:border-primary/40'
-                    }`}
+                      }`}
                   />
                   <button
                     type="button"
@@ -229,9 +228,9 @@ const ResetPassword = () => {
                 <p className="text-sm font-bold text-secondary uppercase tracking-wider">Password Updated</p>
                 <p className="text-xs text-on-surface-variant mt-2">{successMessage}</p>
                 <div className="mt-4 p-2 bg-secondary/5 border border-secondary/10 rounded-md">
-                   <p className="text-[10px] font-mono text-secondary uppercase tracking-widest">
-                     Redirecting to dashboard in {countdown}s...
-                   </p>
+                  <p className="text-[10px] font-mono text-secondary uppercase tracking-widest">
+                    Redirecting to dashboard in {countdown}s...
+                  </p>
                 </div>
               </div>
               <button

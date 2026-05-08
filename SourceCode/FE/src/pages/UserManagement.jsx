@@ -307,7 +307,7 @@ const UserManagement = () => {
               ) : filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="px-6 py-12 text-center">
-                    <EmptyState 
+                    <EmptyState
                       icon={Search}
                       title="No users found"
                       message="No accounts match your current search or filter parameters."

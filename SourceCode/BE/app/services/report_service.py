@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 async def get_summary_report(
         collection: AsyncIOMotorCollection,
+        traffic_collection: AsyncIOMotorCollection,
         start_date: date,
         end_date: date
     ) -> SummaryReportResponse:
@@ -32,33 +33,40 @@ async def get_summary_report(
         count=item["count"]
     ) for item in daily_result]
 
-    # Tổng hợp các chỉ số vi phạm và độ chính xác
-    total_pipeline = [
+    # Tổng hợp các chỉ số vi phạm và độ chính xác (Accuracy) từ collection violations
+    acc_pipeline = [
         {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}}, 
-        {"$project": {
-            "total_violations": 1,
-            "detections_count": {"$size": {"$ifNull": ["$detections", []]}},
-            "avg_conf": {"$avg": "$detections.confidence"}
-        }},
+        {"$unwind": "$detections"},
+        {"$match": {"detections.class_id": 1}}, # Tính accuracy trên vi phạm
         {"$group": {
             "_id": None,
-            "total_violations": {"$sum": "$total_violations"},
-            "total_detections": {"$sum": "$detections_count"},
-            "avg_confidence": {"$avg": "$avg_conf"}
+            "avg_confidence": {"$avg": "$detections.confidence"}
         }}
     ]
-    total_cursor = collection.aggregate(total_pipeline)
-    total_doc = await total_cursor.to_list(length=None)
+    acc_cursor = collection.aggregate(acc_pipeline)
+    acc_doc = await acc_cursor.to_list(length=None)
+    avg_confidence = acc_doc[0].get("avg_confidence", 0.0) if acc_doc else 0.0
+    accuracy = round(avg_confidence * 100, 1) if avg_confidence > 0 else 100.0
+
+    # Lấy tổng số liệu thực tế từ traffic_stats
+    traffic_pipeline = [
+        {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}},
+        {"$group": {
+            "_id": None,
+            "total_violations": {"$sum": "$violation_count"},
+            "total_safe": {"$sum": "$safe_count"}
+        }}
+    ]
+    traffic_cursor = traffic_collection.aggregate(traffic_pipeline)
+    traffic_doc = await traffic_cursor.to_list(length=None)
     
-    if total_doc:
-        total_violations = total_doc[0].get("total_violations", 0) or 0
-        total_detections = total_doc[0].get("total_detections", 0) or 0
-        avg_confidence = total_doc[0].get("avg_confidence", 0.0) or 0.0
-        accuracy = round(avg_confidence * 100, 1) if avg_confidence > 0 else 100.0
+    if traffic_doc:
+        total_violations = traffic_doc[0].get("total_violations", 0) or 0
+        total_safe = traffic_doc[0].get("total_safe", 0) or 0
+        total_detections = total_violations + total_safe
     else:
         total_violations = 0
         total_detections = 0
-        accuracy = 100.0
 
     # Phân tích theo giờ (Hourly breakdown)
     hourly_pipeline = [
@@ -102,6 +110,7 @@ async def get_summary_report(
 
 async def get_trend_report(
         collection: AsyncIOMotorCollection,
+        traffic_collection: AsyncIOMotorCollection,
         start_date: date,
         end_date: date,
         granularity: str = "day"
@@ -111,59 +120,56 @@ async def get_trend_report(
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.max.time())
 
-    base_project = {
-        "timestamp": 1,
-        "total_violations": 1,
-        "detections_count": {"$size": {"$ifNull": ["$detections", []]}},
-        "avg_conf": {"$avg": "$detections.confidence"}
-    }
+    # 1. Lấy dữ liệu Accuracy từ collection violations
+    acc_match = {"timestamp": {"$gte": start_dt, "$lte": end_dt}}
+    date_format = "%Y-%m-%d" if granularity == "day" else None
+    
+    if granularity == "day":
+        acc_group_id = {"$dateToString": {"format": date_format, "date": "$timestamp"}}
+        traffic_group_id = {"$dateToString": {"format": date_format, "date": "$timestamp"}}
+    else:
+        acc_group_id = {"$hour": "$timestamp"}
+        traffic_group_id = {"$hour": "$timestamp"}
+
+    acc_pipeline = [
+        {"$match": acc_match},
+        {"$unwind": "$detections"},
+        {"$match": {"detections.class_id": 1}},
+        {"$group": {
+            "_id": acc_group_id,
+            "accuracy": {"$avg": "$detections.confidence"}
+        }}
+    ]
+    acc_cursor = collection.aggregate(acc_pipeline)
+    acc_results = await acc_cursor.to_list(length=None)
+    acc_dict = {item["_id"]: item.get("accuracy", 1.0) for item in acc_results}
+
+    # 2. Lấy dữ liệu lưu lượng từ traffic_stats
+    traffic_pipeline = [
+        {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}},
+        {"$group": {
+            "_id": traffic_group_id,
+            "violations": {"$sum": "$violation_count"},
+            "safe": {"$sum": "$safe_count"}
+        }},
+        {"$sort": {"_id": 1}}
+    ]
+    traffic_cursor = traffic_collection.aggregate(traffic_pipeline)
+    traffic_results = await traffic_cursor.to_list(length=None)
 
     if granularity == "day":
-        # Xu hướng theo ngày
-        pipeline = [
-            {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}},
-            {"$project": base_project},
-            {"$group": {
-                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
-                "violations": {"$sum": "$total_violations"},
-                "detections": {"$sum": "$detections_count"},
-                "accuracy": {"$avg": "$avg_conf"}
-            }},
-            {"$sort": {"_id": 1}}
-        ]
-
-        cursor = collection.aggregate(pipeline)
-        results = await cursor.to_list(length=None)
-        labels = [item["_id"] for item in results]
-        violations_data = [float(item.get("violations", 0)) for item in results]
-        compliance_data = [float(max(0, item.get("detections", 0) - item.get("violations", 0))) for item in results]
-        # Chuyển đổi confidence (0-1) sang percentage (0-100)
-        accuracy_data = [round(float(item.get("accuracy", 0) or 1.0) * 100, 1) for item in results]
-
+        labels = [item["_id"] for item in traffic_results]
+        violations_data = [float(item.get("violations", 0)) for item in traffic_results]
+        compliance_data = [float(item.get("safe", 0)) for item in traffic_results]
+        accuracy_data = [round(float(acc_dict.get(item["_id"], 1.0) or 1.0) * 100, 1) for item in traffic_results]
     else: # hour
-        # Xu hướng theo giờ
-        pipeline = [
-            {"$match": {"timestamp": {"$gte": start_dt, "$lte": end_dt}}},
-            {"$project": base_project},
-            {"$group": {
-                "_id": {"$hour": "$timestamp"},
-                "violations": {"$sum": "$total_violations"},
-                "detections": {"$sum": "$detections_count"},
-                "accuracy": {"$avg": "$avg_conf"}
-            }},
-            {"$sort": {"_id": 1}}
-        ]
-
-        cursor = collection.aggregate(pipeline)
-        results = await cursor.to_list(length=None)
-        v_by_hour = {item["_id"]: item.get("violations", 0) for item in results}
-        d_by_hour = {item["_id"]: item.get("detections", 0) for item in results}
-        a_by_hour = {item["_id"]: item.get("accuracy", 1.0) for item in results}
+        v_by_hour = {item["_id"]: item.get("violations", 0) for item in traffic_results}
+        s_by_hour = {item["_id"]: item.get("safe", 0) for item in traffic_results}
         
         labels = [str(h) for h in range(24)]
         violations_data = [float(v_by_hour.get(h, 0)) for h in range(24)]
-        compliance_data = [float(max(0, d_by_hour.get(h, 0) - v_by_hour.get(h, 0))) for h in range(24)]
-        accuracy_data = [round(float(a_by_hour.get(h, 1.0) or 1.0) * 100, 1) for h in range(24)]
+        compliance_data = [float(s_by_hour.get(h, 0)) for h in range(24)]
+        accuracy_data = [round(float(acc_dict.get(h, 1.0) or 1.0) * 100, 1) for h in range(24)]
 
     return TrendReportResponse(
         labels=labels,

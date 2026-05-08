@@ -89,28 +89,15 @@ const Analytics = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Real-time updates from WebSocket
+  // Auto-refresh data every 5 minutes (300000ms)
+  // Approach: Soft-polling is much better for Analytics than WebSocket to avoid UI jitter and DB overload
   useEffect(() => {
-    const unsubscribe = socketService.subscribe((message) => {
-      if (message.event === 'new_violation') {
-        // Only update stats if we are looking at current data (today, 7d, 30d, all)
-        if (timeRange !== 'yesterday' && summary) {
-          setSummary(prev => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              total_violations: prev.total_violations + 1,
-              total_detections: prev.total_detections + 1, // Assume it was detected
-              // Note: We don't update peak_hour or trend array here for simplicity,
-              // but total counts will jump immediately.
-            };
-          });
-        }
-      }
-    });
+    const intervalId = setInterval(() => {
+      fetchData();
+    }, 300000);
 
-    return () => unsubscribe();
-  }, [timeRange, summary]);
+    return () => clearInterval(intervalId);
+  }, [timeRange, granularity]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -391,9 +378,9 @@ const Analytics = () => {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyState 
-                title="No Trend Data" 
-                message="Adjust the range or wait for more detections to populate the chart." 
+              <EmptyState
+                title="No Trend Data"
+                message="Adjust the range or wait for more detections to populate the chart."
                 className="h-full"
               />
             )}
@@ -449,9 +436,9 @@ const Analytics = () => {
                 </div>
               </>
             ) : (
-              <EmptyState 
+              <EmptyState
                 icon={Activity}
-                title="Integrity Check" 
+                title="Integrity Check"
                 message="No detections recorded for the selected period."
               />
             )}
