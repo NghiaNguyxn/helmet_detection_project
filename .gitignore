@@ -3,19 +3,40 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
-# AI
+# Local runtime data
+sql_database.db
+*.sqlite
+*.sqlite3
+*.db
+
+# AI / ML artifacts
 dataset/
 runs/
 *.pt
 *.onnx
+*.engine
+*.tflite
 
-# Enviroment 
+# Environment files
 .env
 .env.*
 !.env.example
 
-# IDE
-.vscode/
+# Frontend
+node_modules/
+dist/
+SourceCode/FE/node_modules/
+SourceCode/FE/dist/
+SourceCode/FE/.env
+SourceCode/FE/.env.*
+!SourceCode/FE/.env.example
 
+# IDE / local tooling
+.vscode/
+.idea/
 skills/

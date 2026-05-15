@@ -8,7 +8,7 @@ class WebSocketService {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectInterval = 3000;
-    this.url = API_BASE_URL.replace('http', 'ws') + '/helmet/ws';
+    this.url = API_BASE_URL.replace(/^http/, 'ws') + '/helmet/ws';
     this.status = 'offline'; // 'offline', 'connecting', 'online'
 
     // NẠP DỮ LIỆU TỪ LOCALSTORAGE NẾU CÓ

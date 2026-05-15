@@ -2,6 +2,7 @@ from datetime import datetime
 from pydantic import EmailStr, field_validator
 from sqlmodel import SQLModel, Field
 
+from SourceCode.BE.app.enums.user_role import UserRole
 from SourceCode.BE.app.models.user import UserBase
 
 class UserCreate(UserBase):
@@ -26,3 +27,8 @@ class UserUpdate(SQLModel): # Không kế thừa Base vì các trường này đ
     full_name: str | None = None
     avatar_url: str | None = None
     is_active: bool | None = None
+
+class ReviewUser(SQLModel):
+    id: int
+    username: str
+    role: UserRole

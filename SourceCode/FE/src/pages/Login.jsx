@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Shield, Eye, EyeOff, Lock, User, Loader2, AlertTriangle, Mail, ArrowLeft, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { loginApi } from '../services/api';
+import api, { loginApi } from '../services/api';
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -39,6 +39,9 @@ const Login = () => {
   };
 
   const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setForgotSubmitting(true);
+
     const emailRegex = /\S+@\S+\.\S+/;
     if (!emailRegex.test(forgotEmail)) {
       setForgotStatus('error');

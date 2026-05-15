@@ -7,6 +7,7 @@ import threading
 import yaml
 import os
 import numpy as np
+import tempfile
 from pathlib import Path
 from typing import Optional
 from collections import deque
@@ -82,7 +83,7 @@ class GlobalCamera:
         self.logged_ids = set()
 
         # Đường dẫn file config tracker
-        self.tracker_config_path = Path(__file__).parent.parent / "core" / "custom_tracker.yaml"
+        self.tracker_config_path = Path(tempfile.gettempdir()) / "helmet_detection_tracker.yaml"
 
     async def force_stop(self, user, session):
         """Forcefully clear all viewers and stop hardware, then broadcast alert"""
@@ -176,7 +177,7 @@ class GlobalCamera:
             "fuse_score": True # Ép buộc True để tránh lỗi thư viện
         }
         
-        with open(self.tracker_config_path, 'w') as f:
+        with open(self.tracker_config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config, f)
         logger.info(f"Tracker config updated: buffer={setting.TRACK_BUFFER}")
 
@@ -571,7 +572,7 @@ class GlobalCamera:
                 # Chạy AI Inference
                 # Tối ưu: Nếu là RTSP (delay cao), dùng imgsz nhỏ hơn để tăng tốc
                 source_url = self.camera_sources.get(self.current_source_id, {"url": "0"})["url"]
-                current_imgsz = 416 if not source_url.isdigit() else 640
+                current_imgsz = setting.RTSP_INFERENCE_SIZE if not source_url.isdigit() else setting.VIDEO_INFERENCE_SIZE
 
                 results = await run_in_threadpool(
                     model.track,
@@ -582,8 +583,8 @@ class GlobalCamera:
                     conf=setting.VIOLATION_THRESHOLD,
                     iou=0.5,
                     verbose=False,
-                    device=0,
-                    half=True,
+                    device=setting.INFERENCE_DEVICE,
+                    half=setting.INFERENCE_HALF,
                 )
 
                 annotated_frame, latest_all_detections, _ = annotated_helmet_frame(frame, results)
@@ -630,8 +631,7 @@ class GlobalCamera:
                             annotated_frame.copy(),
                             len(confirmed_violators),
                             confirmed_violators,
-                            db_collection,
-                            manager,
+                            db_collection
                         )
                     )
 

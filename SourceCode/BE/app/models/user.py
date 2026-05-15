@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlmodel import SQLModel, Field, func
 
-from SourceCode.BE.app.enum.user_role import UserRole
+from SourceCode.BE.app.enums.user_role import UserRole
 
 # BASE MODELS
 class UserBase(SQLModel):

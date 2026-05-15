@@ -211,7 +211,7 @@ const Profile = () => {
       if (response.data.code === 200) {
         toast.success('Verification email sent');
       }
-    } catch (error) {
+    } catch {
       toast.error('Failed to resend verification');
     } finally {
       setResendLoading(false);

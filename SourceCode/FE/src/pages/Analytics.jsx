@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
@@ -9,7 +9,6 @@ import {
   Filter
 } from 'lucide-react';
 import api from '../services/api';
-import socketService from '../services/websocket';
 import CustomDropdown from '../components/CustomDropdown';
 import Skeleton from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
@@ -64,9 +63,6 @@ const Analytics = () => {
   const [trend, setTrend] = useState([]);
   const [timeRange, setTimeRange] = useState('7d');
   const [granularity, setGranularity] = useState('day'); // 'day' or 'hour'
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const filterRef = useRef(null);
-
   const timeOptions = [
     { value: 'today', label: 'Today' },
     { value: 'yesterday', label: 'Yesterday' },
@@ -78,16 +74,6 @@ const Analytics = () => {
   useEffect(() => {
     fetchData();
   }, [timeRange, granularity]);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (filterRef.current && !filterRef.current.contains(event.target)) {
-        setIsFilterOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Auto-refresh data every 5 minutes (300000ms)
   // Approach: Soft-polling is much better for Analytics than WebSocket to avoid UI jitter and DB overload
@@ -210,7 +196,9 @@ const Analytics = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-on-surface uppercase leading-none">Intelligence Engine</h2>
-          <p className="text-on-surface-variant text-[10px] font-mono uppercase tracking-[0.2em] mt-2 opacity-70">Deep Analytics & Trends</p>
+          <p className="text-on-surface-variant text-[10px] font-mono uppercase tracking-[0.2em] mt-2 opacity-70">
+            Deep Analytics & Trends - Confirmed Violations Only
+          </p>
         </div>
 
         <CustomDropdown
@@ -450,4 +438,3 @@ const Analytics = () => {
 };
 
 export default Analytics;
-

@@ -9,7 +9,7 @@ from SourceCode.BE.app.exceptions import auth as auth_exceptions
 from SourceCode.BE.app.services import user_service
 from SourceCode.BE.app.exceptions import user as user_exceptions
 from SourceCode.BE.app.models.user import UserDB
-from SourceCode.BE.app.enum.user_role import UserRole
+from SourceCode.BE.app.enums.user_role import UserRole
 
 async def get_current_user(
         request: HTTPConnection,

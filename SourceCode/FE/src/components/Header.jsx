@@ -33,7 +33,9 @@ const Header = () => {
           const data = res.data.result || [];
           setRecentAlerts(data);
         }
-      } catch (e) { }
+      } catch {
+        setRecentAlerts([]);
+      }
     };
 
     fetchInitialAlerts();

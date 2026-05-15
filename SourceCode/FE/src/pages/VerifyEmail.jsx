@@ -8,10 +8,11 @@ const VerifyEmail = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { login } = useAuth();
+  const token = searchParams.get('token');
 
   // States: 'loading' | 'success' | 'error'
-  const [status, setStatus] = useState('loading');
-  const [message, setMessage] = useState('');
+  const [status, setStatus] = useState(token ? 'loading' : 'error');
+  const [message, setMessage] = useState(token ? '' : 'No verification token found. The link may be incomplete.');
   const [countdown, setCountdown] = useState(3);
 
   const hasRun = React.useRef(false);
@@ -19,11 +20,7 @@ const VerifyEmail = () => {
   useEffect(() => {
     if (hasRun.current) return;
 
-    const token = searchParams.get('token');
-
     if (!token) {
-      setStatus('error');
-      setMessage('No verification token found. The link may be incomplete.');
       return;
     }
 
@@ -59,7 +56,7 @@ const VerifyEmail = () => {
     // Slight delay to show the loading animation
     const timer = setTimeout(verifyEmail, 1500);
     return () => clearTimeout(timer);
-  }, [searchParams, login]);
+  }, [token, login]);
 
   // Handle countdown and redirect
   useEffect(() => {

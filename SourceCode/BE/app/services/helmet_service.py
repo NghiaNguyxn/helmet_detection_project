@@ -33,11 +33,11 @@ async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection
     results = await run_in_threadpool(
         model.predict, 
         img, 
-        imgsz=416, 
+        imgsz=setting.IMAGE_INFERENCE_SIZE, 
         conf=setting.VIOLATION_THRESHOLD, 
         verbose=False,
-        device=0,
-        half=True
+        device=setting.INFERENCE_DEVICE,
+        half=setting.INFERENCE_HALF
     )
     
     # 2. Vẽ bounding box và đếm số lượng vi phạm
@@ -50,8 +50,7 @@ async def process_and_log_violation(file: UploadFile, model: YOLO, db_collection
                 annotated_frame.copy(), 
                 violation_count, 
                 all_detections, 
-                db_collection,
-                manager
+                db_collection
             )
         )
         

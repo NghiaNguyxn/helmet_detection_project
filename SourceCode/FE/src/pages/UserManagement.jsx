@@ -28,11 +28,35 @@ import api from '../services/api';
 import toast from 'react-hot-toast';
 import Skeleton from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
+import CustomDropdown from '../components/CustomDropdown';
+
+const ROLE_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'guard', label: 'Guard' },
+];
+
+const USER_ROLE_OPTIONS = [
+  { value: 'guard', label: 'Guard' },
+  { value: 'admin', label: 'Admin' },
+];
+
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+];
+
+const VERIFIED_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'verified', label: 'Verified' },
+  { value: 'unverified', label: 'Unverified' },
+];
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [, setError] = useState('');
 
   // Advanced Filter States
   const [searchTerm, setSearchTerm] = useState('');
@@ -214,46 +238,43 @@ const UserManagement = () => {
 
           <div className="flex items-center gap-2 flex-wrap">
             {/* Role Filter */}
-            <div className="relative">
-              <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-on-surface-variant pointer-events-none" />
-              <select
-                value={filterRole}
-                onChange={(e) => setFilterRole(e.target.value)}
-                className="pl-9 pr-6 py-2.5 bg-surface border border-on-surface/10 rounded-md text-[10px] font-mono uppercase tracking-widest outline-none focus:border-primary/50 transition-all appearance-none cursor-pointer"
-              >
-                <option value="all">Role: ALL</option>
-                <option value="admin">ADMIN</option>
-                <option value="guard">GUARD</option>
-              </select>
-            </div>
+            <CustomDropdown
+              options={ROLE_OPTIONS}
+              value={filterRole}
+              onChange={setFilterRole}
+              icon={Shield}
+              labelPrefix="Role"
+              headerText="Role Filter"
+              align="left"
+              width="w-40"
+              compact
+            />
 
             {/* Status Filter */}
-            <div className="relative">
-              <Activity className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-on-surface-variant pointer-events-none" />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="pl-9 pr-8 py-2.5 bg-surface border border-on-surface/10 rounded-md text-[10px] font-mono uppercase tracking-widest outline-none focus:border-primary/50 transition-all appearance-none cursor-pointer"
-              >
-                <option value="all">Status: ALL</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
+            <CustomDropdown
+              options={STATUS_OPTIONS}
+              value={filterStatus}
+              onChange={setFilterStatus}
+              icon={Activity}
+              labelPrefix="Status"
+              headerText="Status Filter"
+              align="left"
+              width="w-44"
+              compact
+            />
 
             {/* Verified Filter */}
-            <div className="relative">
-              <CheckCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-on-surface-variant pointer-events-none" />
-              <select
-                value={filterVerified}
-                onChange={(e) => setFilterVerified(e.target.value)}
-                className="pl-9 pr-8 py-2.5 bg-surface border border-on-surface/10 rounded-md text-[10px] font-mono uppercase tracking-widest outline-none focus:border-primary/50 transition-all appearance-none cursor-pointer"
-              >
-                <option value="all">Verified: ALL</option>
-                <option value="verified">Verified</option>
-                <option value="unverified">Unverified</option>
-              </select>
-            </div>
+            <CustomDropdown
+              options={VERIFIED_OPTIONS}
+              value={filterVerified}
+              onChange={setFilterVerified}
+              icon={CheckCircle}
+              labelPrefix="Verified"
+              headerText="Verification Filter"
+              align="left"
+              width="w-52"
+              compact
+            />
           </div>
 
           <button
@@ -315,7 +336,7 @@ const UserManagement = () => {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user, idx) => (
+                filteredUsers.map((user) => (
                   <tr key={user.id} className="hover:bg-primary/5 transition-all group">
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-4">
@@ -416,7 +437,7 @@ const UserManagement = () => {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+        <div className="fixed inset-0 w-screen h-screen z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-background/90 backdrop-blur-md" onClick={() => setDeleteConfirmId(null)}></div>
           <div className="relative w-full max-w-sm surface-1 border border-error/20 rounded-lg p-8 tech-glow animate-in zoom-in-95 duration-200 text-center">
             <div className="w-16 h-16 bg-error/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-error/20">
@@ -447,7 +468,7 @@ const UserManagement = () => {
 
       {/* Registration Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 w-screen h-screen z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}></div>
 
           <div className="relative w-full max-w-lg surface-1 border border-on-surface/10 rounded-lg tech-glow modal-enter">
@@ -487,17 +508,18 @@ const UserManagement = () => {
 
                 <div className="space-y-2.5">
                   <label className="text-[10px] font-mono uppercase text-on-surface-variant font-bold px-1 tracking-widest">Clearance Level</label>
-                  <div className="relative">
-                    <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant opacity-50" />
-                    <select
-                      value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                      className="w-full pl-10 pr-4 py-2.5 bg-surface border border-on-surface/10 rounded-md text-sm outline-none focus:border-primary/50 transition-all appearance-none cursor-pointer uppercase font-bold"
-                    >
-                      <option value="guard">GUARD</option>
-                      <option value="admin">ADMIN</option>
-                    </select>
-                  </div>
+                  <CustomDropdown
+                    options={USER_ROLE_OPTIONS}
+                    value={formData.role}
+                    onChange={(role) => setFormData({ ...formData, role })}
+                    icon={Shield}
+                    labelPrefix="Level"
+                    headerText="Clearance Level"
+                    align="left"
+                    width="w-full"
+                    containerClassName="w-full"
+                    buttonClassName="w-full justify-between px-4 py-2.5"
+                  />
                 </div>
               </div>
 

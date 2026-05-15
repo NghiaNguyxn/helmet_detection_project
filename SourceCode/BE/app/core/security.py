@@ -31,7 +31,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 def verify_token(token: str):
     try:
-        payload = jwt.decode(token, setting.SECRET_KEY, algorithms=setting.ALGORITHM)
+        payload = jwt.decode(token, setting.SECRET_KEY, algorithms=[setting.ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             return None
