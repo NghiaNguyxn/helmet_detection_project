@@ -118,6 +118,7 @@ async def save_violation_backtask(
         violation_count: int, 
         all_detections: list[Detection], 
         db_collection: AsyncIOMotorCollection,
+        camera_context: dict | None = None,
     ):
     """Background task for saving violation record"""
 
@@ -132,6 +133,12 @@ async def save_violation_backtask(
             image_url=cloud_url,
             total_violations=violation_count,
             detections=[d for d in all_detections if d.class_id == 1],
+            camera_id=camera_context.get("camera_id") if camera_context else None,
+            camera_code=camera_context.get("camera_code") if camera_context else None,
+            camera_name=camera_context.get("camera_name") if camera_context else None,
+            camera_location=camera_context.get("camera_location") if camera_context else None,
+            camera_source_type=camera_context.get("camera_source_type") if camera_context else None,
+            is_demo=bool(camera_context.get("is_demo")) if camera_context else False,
             status=ViolationStatus.PENDING,
             reviewed_by=None,
             reviewed_at=None,

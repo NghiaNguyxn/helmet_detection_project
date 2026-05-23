@@ -8,8 +8,10 @@ from fastapi.staticfiles import StaticFiles
 from ultralytics import YOLO
 
 from SourceCode.BE.app.api import (
+    audit_router,
     alert_router,
     auth_router,
+    camera_router,
     helmet_router,
     report_router,
     user_router,
@@ -97,6 +99,8 @@ async def health_check():
 
 app.include_router(helmet_router.router)
 app.include_router(alert_router.router)
+app.include_router(audit_router.router)
+app.include_router(camera_router.router)
 app.include_router(violations_router.router)
 app.include_router(user_router.router)
 app.include_router(auth_router.router)

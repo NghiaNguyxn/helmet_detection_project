@@ -40,3 +40,6 @@ SourceCode/FE/.env.*
 .vscode/
 .idea/
 skills/
+
+# Demo videos
+demo/

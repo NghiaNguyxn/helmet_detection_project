@@ -3,8 +3,10 @@ import { NavLink } from 'react-router-dom';
 import { 
   Shield, 
   Activity, 
+  Camera,
   History, 
   BarChart2, 
+  FileClock,
   Users, 
   LogOut,
   User
@@ -19,7 +21,11 @@ const Sidebar = () => {
     { icon: Activity, label: 'Live Monitor', path: '/live' },
     { icon: History, label: 'Violations', path: '/violations' },
     { icon: BarChart2, label: 'Analytics', path: '/analytics' },
-    ...(isAdmin ? [{ icon: Users, label: 'User Management', path: '/users' }] : []),
+    ...(isAdmin ? [
+      { icon: Users, label: 'User Management', path: '/users' },
+      { icon: Camera, label: 'Cameras', path: '/cameras' },
+      { icon: FileClock, label: 'Audit Logs', path: '/audit-logs' },
+    ] : []),
   ];
 
   return (

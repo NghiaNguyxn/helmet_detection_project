@@ -20,7 +20,7 @@ const RecentViolationsPanel = ({ recentLogs, onSelectImage, onArchiveView }) => 
           <div>
             <p className="text-[10px] font-bold text-on-surface uppercase leading-tight">Violation</p>
             <p className="text-[9px] text-on-surface-variant font-mono mt-0.5 opacity-60">
-              {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {log.camera_id || 'CAM_1'}
+              {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {log.camera_code || log.camera_id || 'CAM_1'}
             </p>
           </div>
         </div>

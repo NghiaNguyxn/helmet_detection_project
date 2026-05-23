@@ -47,6 +47,7 @@ const LiveMonitoring = () => {
   const [isSwitching, setIsSwitching] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   const [streamKey, setStreamKey] = useState(Date.now());
+  const streamViewerId = `${viewerId}_${streamKey}`;
   const [telemetry, setTelemetry] = useState({
     status: "Inactive",
     fps: 0,
@@ -114,7 +115,7 @@ const LiveMonitoring = () => {
       setStreamKey(Date.now());
     } else {
       try {
-        await api.post(`/helmet/stop-video-feed?v_id=${viewerId}`);
+        await api.post(`/helmet/stop-video-feed?v_id=${streamViewerId}`);
       } catch (err) {
         console.warn('Stream stop error:', err);
       }
@@ -271,8 +272,10 @@ const LiveMonitoring = () => {
     try {
       const res = await api.post(`/helmet/switch-camera/${sourceId}`);
       if (res.data && res.data.code === 200) {
-        setCurrentCam(sourceId);
-        toast.success(`Switched to ${sourceId}`);
+        const resolvedCam = res.data.result?.current || sourceId;
+        setCurrentCam(resolvedCam);
+        setStreamKey(Date.now());
+        toast.success(`Switched to ${resolvedCam}`);
       }
     } catch (err) {
       toast.error("Failed to switch camera");
@@ -284,7 +287,8 @@ const LiveMonitoring = () => {
 
   useEffect(() => {
     const camId = searchParams.get('cam');
-    if (camId && cameraSources.length > 0 && cameraSources.includes(camId) && camId !== currentCam) {
+    const hasSource = cameraSources.some((source) => (typeof source === 'string' ? source : source.code) === camId);
+    if (camId && cameraSources.length > 0 && hasSource && camId !== currentCam) {
       handleSwitchCamera(camId);
     }
   }, [searchParams, cameraSources, currentCam, handleSwitchCamera]);
@@ -405,7 +409,7 @@ const LiveMonitoring = () => {
     setSelectedImageIndex((selectedImageIndex - 1 + recentLogs.length) % recentLogs.length);
   };
 
-  const streamUrl = `${API_BASE_URL}/helmet/video-feed?v_id=${viewerId}&token=${localStorage.getItem('token') || ''}&t=${currentCam}&k=${streamKey}`;
+  const streamUrl = `${API_BASE_URL}/helmet/video-feed?v_id=${streamViewerId}&token=${localStorage.getItem('token') || ''}&t=${currentCam}&k=${streamKey}`;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

@@ -29,6 +29,12 @@ class ViolationRecord(BaseModel):
     image_url: str
     total_violations: int
     detections: list[Detection]
+    camera_id: int | None = None
+    camera_code: str | None = None
+    camera_name: str | None = None
+    camera_location: str | None = None
+    camera_source_type: str | None = None
+    is_demo: bool = False
     status: ViolationStatus = ViolationStatus.PENDING
     reviewed_by: ReviewUser | None = None
     reviewed_at: datetime | None = None

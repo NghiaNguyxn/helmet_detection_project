@@ -10,6 +10,8 @@ import LiveMonitoring from './pages/LiveMonitoring';
 import ViolationHistory from './pages/ViolationHistory';
 import Analytics from './pages/Analytics';
 import UserManagement from './pages/UserManagement';
+import AuditLogs from './pages/AuditLogs';
+import CameraManagement from './pages/CameraManagement';
 import Profile from './pages/Profile';
 
 const PrivateRoute = () => {
@@ -55,6 +57,8 @@ function App() {
               <Route path="analytics" element={<Analytics />} />
               <Route element={<AdminRoute />}>
                 <Route path="users" element={<UserManagement />} />
+                <Route path="cameras" element={<CameraManagement />} />
+                <Route path="audit-logs" element={<AuditLogs />} />
               </Route>
               <Route path="profile" element={<Profile />} />
             </Route>

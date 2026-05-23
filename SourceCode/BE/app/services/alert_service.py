@@ -17,7 +17,12 @@ async def create_and_broadcast_alert(session: Session, user: VerifiedUser, alert
     )
     
     session.add(db_alert)
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
     session.refresh(db_alert)
     
     # Prepare payload for real-time display

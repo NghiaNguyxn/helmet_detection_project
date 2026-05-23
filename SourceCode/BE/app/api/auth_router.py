@@ -4,13 +4,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 from datetime import timedelta
-from fastapi import APIRouter, Depends, status, BackgroundTasks
+from fastapi import APIRouter, Depends, Request, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 
 from SourceCode.BE.app.dependencies.sql_database import SessionDep
 from SourceCode.BE.app.dependencies.user import CurrentUser, allow_admin, allow_any_staff
 from SourceCode.BE.app.schemas import auth_schema
 from SourceCode.BE.app.services import auth_service
+from SourceCode.BE.app.services import audit_service
 from SourceCode.BE.app.services import user_service
 from SourceCode.BE.app.schemas import user_schema
 from SourceCode.BE.app.schemas.base_schema import BaseResponse
@@ -22,12 +23,13 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", 
             response_model=BaseResponse[user_schema.UserResponse],
-            status_code=status.HTTP_201_CREATED,
-            dependencies=[Depends(allow_admin)])
+            status_code=status.HTTP_201_CREATED)
 async def register(
     user_create: user_schema.UserCreate,
     session: SessionDep,
-    bg_tasks: BackgroundTasks
+    bg_tasks: BackgroundTasks,
+    request: Request,
+    admin_user = Depends(allow_admin),
 ):
     """Register a new user and send verification email"""
 
@@ -37,6 +39,22 @@ async def register(
         email_utils.send_verification_email, 
         user=user, 
         token=user.verification_token
+    )
+    audit_service.create_log(
+        session=session,
+        action="user.created",
+        actor=admin_user,
+        target_type="user",
+        target_id=user.id,
+        description=f"Created user {user.username}",
+        ip_address=audit_service.request_ip(request),
+        metadata={
+            "username": user.username,
+            "email": user.email,
+            "role": user.role.value,
+            "is_active": user.is_active,
+            "is_verified": user.is_verified,
+        },
     )
     
     return BaseResponse(

@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Session, create_engine
 from SourceCode.BE.app.services.user_service import create_initial_admin
+from SourceCode.BE.app.models import audit_log, alert, camera, user
 
 from SourceCode.BE.app.core.config import setting
 

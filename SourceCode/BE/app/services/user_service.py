@@ -117,7 +117,13 @@ def update_status(session: Session, user_id: int, is_active: bool):
     
     db_user.is_active = is_active
     session.add(db_user)
-    session.commit()
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
     session.refresh(db_user)
     return db_user
 
@@ -146,7 +152,13 @@ def delete_user(session: Session, user_id: int):
         raise user_exceptions.UserNotFound()
     
     session.delete(db_user)
-    session.commit()
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
     return True
 
 def change_password(session: Session, user_id: int, current_password: str, new_password: str):
@@ -165,7 +177,13 @@ def change_password(session: Session, user_id: int, current_password: str, new_p
     user.hashed_password = security.get_password_hash(new_password)
 
     session.add(user)
-    session.commit()
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
     session.refresh(user)
     return user
 
@@ -193,4 +211,8 @@ def create_initial_admin(session: Session):
     )
 
     session.add(admin_user)
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise

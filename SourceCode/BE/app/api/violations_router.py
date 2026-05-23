@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status, Response
 from motor.motor_asyncio import AsyncIOMotorCollection
 
 from SourceCode.BE.app.dependencies.nosql_database import get_violation_collection
+from SourceCode.BE.app.dependencies.sql_database import SessionDep
 from SourceCode.BE.app.dependencies.user import allow_admin, allow_any_staff
 from SourceCode.BE.app.exceptions.violation import ViolationNotFoundError
 from SourceCode.BE.app.schemas.helmet_schema import (
@@ -13,6 +14,7 @@ from SourceCode.BE.app.schemas.helmet_schema import (
     ViolationRejectRequest
 )
 from SourceCode.BE.app.schemas.base_schema import BaseResponse
+from SourceCode.BE.app.services import audit_service
 from SourceCode.BE.app.services import violation_service
 from SourceCode.BE.app.models.user import UserDB
 
@@ -61,6 +63,8 @@ async def get_violation_history(
 )
 async def confirm_violation(
     request: ViolationConfirmRequest,
+    session: SessionDep,
+    http_request: Request,
     violation_id: str = Path(..., description="ID of the violation to confirm"),
     reviewer: UserDB = Depends(allow_any_staff),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection),
@@ -75,6 +79,19 @@ async def confirm_violation(
     )
     if not violation:
         raise ViolationNotFoundError()
+    audit_service.create_log(
+        session=session,
+        action="violation.confirmed",
+        actor=reviewer,
+        target_type="violation",
+        target_id=violation_id,
+        description=f"Confirmed violation {violation_id}",
+        ip_address=audit_service.request_ip(http_request),
+        metadata={
+            "new_status": "confirmed",
+            "review_note": request.review_note,
+        },
+    )
     
     return BaseResponse(
         code=status.HTTP_200_OK, 
@@ -88,6 +105,8 @@ async def confirm_violation(
 )
 async def reject_violation(
     request: ViolationRejectRequest,
+    session: SessionDep,
+    http_request: Request,
     violation_id: str = Path(..., description="ID of the violation to reject"),
     reviewer: UserDB = Depends(allow_any_staff),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection),
@@ -103,6 +122,20 @@ async def reject_violation(
     )
     if not violation:
         raise ViolationNotFoundError()
+    audit_service.create_log(
+        session=session,
+        action="violation.rejected",
+        actor=reviewer,
+        target_type="violation",
+        target_id=violation_id,
+        description=f"Rejected violation {violation_id}",
+        ip_address=audit_service.request_ip(http_request),
+        metadata={
+            "new_status": "rejected",
+            "rejection_reason": request.rejection_reason.value,
+            "review_note": request.review_note,
+        },
+    )
     
     return BaseResponse(
         code=status.HTTP_200_OK, 
@@ -110,9 +143,12 @@ async def reject_violation(
         result=violation
     )
 
-@router.delete("/{violation_id}", dependencies=[Depends(allow_admin)])
+@router.delete("/{violation_id}")
 async def delete_violation(
     violation_id: str,
+    session: SessionDep,
+    request: Request,
+    admin_user: UserDB = Depends(allow_admin),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection)
 ):
     """Delete a violation record (Admin Only)"""
@@ -120,6 +156,15 @@ async def delete_violation(
     success = await violation_service.delete_violation(db_collection, violation_id)
     if not success:
         raise ViolationNotFoundError()
+    audit_service.create_log(
+        session=session,
+        action="violation.deleted",
+        actor=admin_user,
+        target_type="violation",
+        target_id=violation_id,
+        description=f"Deleted violation {violation_id}",
+        ip_address=audit_service.request_ip(request),
+    )
         
     return BaseResponse(code=status.HTTP_200_OK, message="Violation record deleted successfully")
 

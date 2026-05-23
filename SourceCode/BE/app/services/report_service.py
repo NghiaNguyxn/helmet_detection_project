@@ -17,6 +17,7 @@ def _confirmed_violation_match(start_dt: datetime, end_dt: datetime) -> dict:
     return {
         "timestamp": {"$gte": start_dt, "$lte": end_dt},
         "status": "confirmed",
+        "is_demo": {"$ne": True},
     }
 
 async def get_summary_report(

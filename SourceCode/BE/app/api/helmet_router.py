@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Depends, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Depends, Request, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from ultralytics import YOLO
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -10,6 +10,8 @@ from SourceCode.BE.app.dependencies.model import get_model
 from SourceCode.BE.app.dependencies.nosql_database import get_violation_collection
 from SourceCode.BE.app.dependencies.sql_database import SessionDep
 from SourceCode.BE.app.dependencies.user import allow_any_staff, VerifiedUser
+from SourceCode.BE.app.models.user import UserDB
+from SourceCode.BE.app.services import audit_service
 from SourceCode.BE.app.services.video_service import generated_video_frames, stop_video_frames, global_camera
 from SourceCode.BE.app.exceptions.helmet import InvalidFileTypeError, CannotStopCameraError, CameraSwitchError
 from SourceCode.BE.app.core.websocket_manager import manager
@@ -103,40 +105,105 @@ async def stop_video_feed(v_id: str = "anonymous"):
 
 @router.get("/camera-sources", dependencies=[Depends(allow_any_staff)])
 async def get_camera_sources():
-    """Get the list of available camera source IDs from .env"""
+    """Get available camera sources without exposing source_url credentials."""
+
+    global_camera.reload_sources()
+    sources = []
+    for code, info in global_camera.camera_sources.items():
+        sources.append({
+            "id": info.get("id"),
+            "code": code,
+            "name": info.get("name", code),
+            "location": info.get("location"),
+            "source_type": info.get("source_type", "webcam"),
+            "is_active": info.get("is_active", True),
+            "last_status": info.get("last_status", "unchecked"),
+            "runtime_status": global_camera.camera_status if code == global_camera.current_source_id else None,
+        })
 
     return BaseResponse(
         code=status.HTTP_200_OK,
         message="Camera sources retrieved",
-        result={"sources": list(global_camera.camera_sources.keys()), "current": global_camera.current_source_id}
+        result={"sources": sources, "current": global_camera.current_source_id}
     )
 
 @router.post("/force-stop-camera", dependencies=[Depends(allow_any_staff)])
 async def force_stop_camera(
     user: VerifiedUser,
-    session: SessionDep
+    session: SessionDep,
+    request: Request
 ):
     """Forcefully clear all active viewers and stop the camera hardware"""
     
+    viewer_count = len(global_camera.active_viewers)
+    current_source = global_camera.current_source_id
     await global_camera.force_stop(user, session)
+    audit_service.create_log(
+        session=session,
+        action="camera.force_stopped",
+        actor=user,
+        target_type="camera",
+        target_id=current_source,
+        description="Force stopped camera pipeline",
+        ip_address=audit_service.request_ip(request),
+        metadata={
+            "viewer_count": viewer_count,
+            "forced_stop": True,
+            "camera_source": current_source,
+        },
+    )
         
     return BaseResponse(
         code=status.HTTP_200_OK,
         message="Camera forced to stop. All viewer IDs cleared and alert broadcasted."
     )
 
-@router.post("/switch-camera/{source_id}", dependencies=[Depends(allow_any_staff)])
+@router.post("/switch-camera/{source_id}")
 async def switch_camera(
-    source_id: str
+    source_id: str,
+    session: SessionDep,
+    request: Request,
+    user: UserDB = Depends(allow_any_staff),
 ):
     """Switch the live video feed to a different camera source"""
 
-    success = await global_camera.switch_camera(source_id)
+    old_source = global_camera.current_source_id
+    resolved_source_id = _resolve_camera_source_id(source_id)
+    success = await global_camera.switch_camera(resolved_source_id)
     if not success:
         raise CameraSwitchError()
+    if resolved_source_id != old_source:
+        audit_service.create_log(
+            session=session,
+            action="camera.switched",
+            actor=user,
+            target_type="camera",
+            target_id=resolved_source_id,
+            description=f"Switched camera from {old_source} to {resolved_source_id}",
+            ip_address=audit_service.request_ip(request),
+            metadata={
+                "old_source": old_source,
+                "new_source": resolved_source_id,
+                "requested_source": source_id,
+            },
+        )
 
     return BaseResponse(
         code=status.HTTP_200_OK,
-        message=f"Switched to {source_id} successfully",
+        message=f"Switched to {resolved_source_id} successfully",
         result={"current": global_camera.current_source_id}
     )
+
+
+def _resolve_camera_source_id(source_id: str) -> str:
+    # Live pipeline dùng camera code làm key nội bộ. Đoạn này cho phép FE/API gửi
+    # cả code ("CAM_1") hoặc DB id ("1") mà vẫn switch đúng camera.
+    global_camera.reload_sources()
+    if source_id in global_camera.camera_sources:
+        return source_id
+
+    for code, info in global_camera.camera_sources.items():
+        if str(info.get("id")) == str(source_id):
+            return code
+
+    return source_id

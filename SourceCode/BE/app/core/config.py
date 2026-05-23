@@ -19,16 +19,25 @@ class Settings(BaseSettings):
     ALERT_COOLDOWN: int
     INFERENCE_DEVICE: int | str = 0
     INFERENCE_HALF: bool = True
-    IMAGE_INFERENCE_SIZE: int = 416
+    IMAGE_INFERENCE_SIZE: int = 640
     VIDEO_INFERENCE_SIZE: int = 640
     RTSP_INFERENCE_SIZE: int = 416
+    DEMO_VIOLATION_COOLDOWN_SECONDS: int = 120
+    VIOLATION_DEDUP_SECONDS: float = 6.0
+    VIOLATION_DEDUP_IOU_THRESHOLD: float = 0.15
+    VIOLATION_DEDUP_CENTER_DISTANCE: float = 260.0
+    ENABLE_SPATIAL_VOTING: bool = False
+    SPATIAL_VOTE_WINDOW_SECONDS: float = 1.0
+    SPATIAL_VOTE_MIN_COUNT: int = 3
+    SPATIAL_VOTE_IOU_THRESHOLD: float = 0.2
+    SPATIAL_VOTE_CENTER_DISTANCE: float = 120.0
     
     # Tracker
     TRACK_HIGH_THRESH: float = 0.5
-    TRACK_LOW_THRESH: float = 0.1
-    NEW_TRACK_THRESH: float = 0.6
+    TRACK_LOW_THRESH: float = 0.2
+    NEW_TRACK_THRESH: float = 0.7
     TRACK_BUFFER: int = 60
-    MATCH_THRESH: float = 0.8
+    MATCH_THRESH: float = 0.5
 
     # Directory
     VIOLATION_DIR: str
