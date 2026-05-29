@@ -13,7 +13,7 @@ import {
   Camera
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import api from '../services/api';
+import api, { getApiErrorData, getApiErrorMessage, getApiFieldErrors } from '../services/api';
 import toast from 'react-hot-toast';
 
 const Profile = () => {
@@ -91,7 +91,7 @@ const Profile = () => {
       }
     } catch (error) {
       console.error('Avatar upload error:', error);
-      toast.error(error.response?.data?.message || 'Failed to sync identity profile', { id: toastId });
+      toast.error(getApiErrorMessage(error, 'Failed to sync identity profile'), { id: toastId });
     } finally {
       setUploading(false);
       e.target.value = ''; // Reset input
@@ -129,22 +129,18 @@ const Profile = () => {
       }
     } catch (error) {
       console.error('Update info error:', error);
-      const errorData = error.response?.data;
+      const errorData = getApiErrorData(error);
       const message = errorData?.message;
       const errorCode = errorData?.error_code;
 
       if (errorCode === 'VALIDATION_ERROR' && errorData.errors) {
-        const fieldErrors = {};
-        errorData.errors.forEach(err => {
-          fieldErrors[err.field] = err.message;
-        });
-        setInfoErrors(fieldErrors);
+        setInfoErrors(getApiFieldErrors(error));
       } else if (message?.toLowerCase().includes('username')) {
         setInfoErrors({ username: message });
       } else if (message?.toLowerCase().includes('email')) {
         setInfoErrors({ email: message });
       } else {
-        toast.error(message || 'Failed to update information');
+        toast.error(getApiErrorMessage(error, 'Failed to update information'));
       }
     } finally {
       setInfoLoading(false);
@@ -181,7 +177,7 @@ const Profile = () => {
       }
     } catch (error) {
       console.error('Change password error:', error);
-      const errorData = error.response?.data;
+      const errorData = getApiErrorData(error);
       const errorCode = errorData?.error_code;
       const message = errorData?.message;
 
@@ -190,13 +186,9 @@ const Profile = () => {
       } else if (errorCode === 'AUTH_FAILED' || errorCode === 'INCORRECT_CREDENTIALS' || message?.toLowerCase().includes('current password')) {
         setPassErrors({ current_password: message || 'Incorrect current password' });
       } else if (errorCode === 'VALIDATION_ERROR' && errorData.errors) {
-        const fieldErrors = {};
-        errorData.errors.forEach(err => {
-          fieldErrors[err.field] = err.message;
-        });
-        setPassErrors(fieldErrors);
+        setPassErrors(getApiFieldErrors(error));
       } else {
-        toast.error(message || 'Failed to update password');
+        toast.error(getApiErrorMessage(error, 'Failed to update password'));
       }
     } finally {
       setPassLoading(false);
@@ -211,8 +203,8 @@ const Profile = () => {
       if (response.data.code === 200) {
         toast.success('Verification email sent');
       }
-    } catch {
-      toast.error('Failed to resend verification');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to resend verification'));
     } finally {
       setResendLoading(false);
     }

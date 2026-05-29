@@ -10,7 +10,7 @@ import {
   User,
   X,
 } from 'lucide-react';
-import api from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
 import DatePickerField from '../components/violations/DatePickerField';
@@ -155,7 +155,7 @@ const AuditLogs = () => {
       }
     } catch (err) {
       console.error('Error fetching audit logs:', err);
-      setError(err.response?.data?.message || 'Unable to load audit logs');
+      setError(getApiErrorMessage(err, 'Unable to load audit logs'));
     } finally {
       setLoading(false);
     }

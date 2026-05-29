@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import VerifyEmail from './pages/VerifyEmail';
@@ -37,6 +38,20 @@ const AdminRoute = () => {
   return user?.role === 'admin' ? <Outlet /> : <Navigate to="/live" />;
 };
 
+const VerifiedRoute = () => {
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user && !user.is_verified) {
+      toast.error('Please verify your email before using this feature.');
+    }
+  }, [loading, user]);
+
+  if (loading) return null;
+
+  return user?.is_verified ? <Outlet /> : <Navigate to="/profile" replace />;
+};
+
 function App() {
   return (
     <AuthProvider>
@@ -52,13 +67,15 @@ function App() {
           <Route element={<PrivateRoute />}>
             <Route path="/" element={<Layout />}>
               <Route index element={<Navigate to="/live" />} />
-              <Route path="live" element={<LiveMonitoring />} />
-              <Route path="violations" element={<ViolationHistory />} />
-              <Route path="analytics" element={<Analytics />} />
-              <Route element={<AdminRoute />}>
-                <Route path="users" element={<UserManagement />} />
-                <Route path="cameras" element={<CameraManagement />} />
-                <Route path="audit-logs" element={<AuditLogs />} />
+              <Route element={<VerifiedRoute />}>
+                <Route path="live" element={<LiveMonitoring />} />
+                <Route path="violations" element={<ViolationHistory />} />
+                <Route path="analytics" element={<Analytics />} />
+                <Route element={<AdminRoute />}>
+                  <Route path="users" element={<UserManagement />} />
+                  <Route path="cameras" element={<CameraManagement />} />
+                  <Route path="audit-logs" element={<AuditLogs />} />
+                </Route>
               </Route>
               <Route path="profile" element={<Profile />} />
             </Route>

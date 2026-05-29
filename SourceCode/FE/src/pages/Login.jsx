@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Shield, Eye, EyeOff, Lock, User, Loader2, AlertTriangle, Mail, ArrowLeft, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api, { loginApi } from '../services/api';
+import api, { getApiErrorMessage, loginApi } from '../services/api';
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -32,7 +32,7 @@ const Login = () => {
       navigate('/live');
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.response?.data?.detail || 'Authentication failed. Please check your credentials.');
+      setError(getApiErrorMessage(err, 'Authentication failed. Please check your credentials.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -56,8 +56,7 @@ const Login = () => {
       setForgotMessage(response.data.message || 'If your email is registered, you will receive a password reset link.');
     } catch (err) {
       setForgotStatus('error');
-      const detail = err.response?.data?.detail;
-      setForgotMessage(typeof detail === 'string' ? detail : 'Something went wrong. Please try again.');
+      setForgotMessage(getApiErrorMessage(err, 'Something went wrong. Please try again.'));
     } finally {
       setForgotSubmitting(false);
     }

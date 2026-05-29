@@ -59,16 +59,33 @@ const ViolationEvidenceModal = ({
                 <span className="text-[10px] font-mono font-bold text-primary tracking-widest uppercase">EVIDENCE {selectedViolationIndex + 1}/{violationsLength}</span>
                 <span className="text-[8px] font-mono text-primary/60 uppercase tracking-widest">Global Index: {((page - 1) * limit) + selectedViolationIndex + 1}</span>
               </div>
+              {selectedViolation.is_demo && (
+                <div className="bg-primary/10 backdrop-blur-md px-3 py-1 rounded border border-primary/20">
+                  <span className="text-[10px] font-mono font-bold text-primary tracking-widest uppercase">Demo Data</span>
+                </div>
+              )}
             </div>
 
             {/* Details Overlay */}
             <div className="absolute bottom-4 left-4 right-4 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
-              <div className="bg-background/80 backdrop-blur-xl border border-on-surface/10 p-4 rounded-md shadow-2xl flex justify-between items-center">
-                <div>
+              <div className="bg-background/80 backdrop-blur-xl border border-on-surface/10 p-4 rounded-md shadow-2xl grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                <div className="min-w-0">
                   <p className="text-[10px] font-mono text-primary font-bold uppercase tracking-widest mb-1">TIMESTAMP</p>
                   <p className="text-xs font-bold text-on-surface">{new Date(selectedViolation.timestamp).toLocaleString()}</p>
                 </div>
-                <div className="text-right">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono text-primary font-bold uppercase tracking-widest mb-1">CAMERA</p>
+                  <p className="text-xs font-bold text-on-surface truncate">
+                    {selectedViolation.camera_code || 'Unknown'}
+                    {selectedViolation.camera_name ? ` - ${selectedViolation.camera_name}` : ''}
+                  </p>
+                  <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest truncate">
+                    {[selectedViolation.camera_location, selectedViolation.camera_source_type]
+                      .filter(Boolean)
+                      .join(' / ') || 'No camera metadata'}
+                  </p>
+                </div>
+                <div className="text-left md:text-right">
                   <p className="text-[10px] font-mono text-error font-bold uppercase tracking-widest mb-1">TOTAL VIOLATIONS</p>
                   <p className="text-xs font-bold text-error">{selectedViolation.total_violations}</p>
                 </div>

@@ -1,9 +1,9 @@
-from datetime import datetime
 from sqlmodel import Session, select
 from SourceCode.BE.app.models.alert import SecurityAlert
 from SourceCode.BE.app.schemas.alert_schema import SecurityAlertCreate
 from SourceCode.BE.app.core.websocket_manager import manager
 from SourceCode.BE.app.dependencies.user import VerifiedUser
+from SourceCode.BE.app.utils import time as time_utils
 
 async def create_and_broadcast_alert(session: Session, user: VerifiedUser, alert_in: SecurityAlertCreate):
     """
@@ -13,7 +13,7 @@ async def create_and_broadcast_alert(session: Session, user: VerifiedUser, alert
         user_id=user.id,
         message=alert_in.message,
         camera_id=alert_in.camera_id,
-        timestamp=datetime.now()
+        timestamp=time_utils.utc_now()
     )
     
     session.add(db_alert)

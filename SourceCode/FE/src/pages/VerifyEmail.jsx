@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Shield, CheckCircle, XCircle, Loader2, ArrowRight, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import api, { API_BASE_URL } from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
 
 const VerifyEmail = () => {
   const [searchParams] = useSearchParams();
@@ -42,14 +42,7 @@ const VerifyEmail = () => {
         }
       } catch (err) {
         setStatus('error');
-        // Handle both standard FastAPI 'detail' and custom 'message'
-        const errorData = err.response?.data;
-        const detail = errorData?.message || errorData?.detail;
-        setMessage(
-          typeof detail === 'string'
-            ? detail
-            : 'The verification link is invalid or has expired.'
-        );
+        setMessage(getApiErrorMessage(err, 'The verification link is invalid or has expired.'));
       }
     };
 

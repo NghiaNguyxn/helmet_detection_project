@@ -2,7 +2,7 @@ import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
-import api, { API_BASE_URL } from '../services/api';
+import api, { API_BASE_URL, getApiErrorMessage } from '../services/api';
 import socketService from '../services/websocket';
 import BroadcastAlertModal from '../components/live-monitoring/BroadcastAlertModal';
 import CameraControls from '../components/live-monitoring/CameraControls';
@@ -135,8 +135,8 @@ const LiveMonitoring = () => {
         toast.success('Camera system force-reset successfully');
         setStreamKey(Date.now());
       }
-    } catch {
-      toast.error('Failed to reset camera');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to reset camera'));
     }
   };
 
@@ -278,7 +278,7 @@ const LiveMonitoring = () => {
         toast.success(`Switched to ${resolvedCam}`);
       }
     } catch (err) {
-      toast.error("Failed to switch camera");
+      toast.error(getApiErrorMessage(err, 'Failed to switch camera'));
       console.error(err);
     } finally {
       setTimeout(() => setIsSwitching(false), 1000);
@@ -338,9 +338,9 @@ const LiveMonitoring = () => {
       }
     } catch (err) {
       if (err.response?.status === 403) {
-        toast.error('Unauthorized: Admin access required to delete');
+        toast.error(getApiErrorMessage(err, 'Admin access required to delete'));
       } else {
-        toast.error('Failed to delete record');
+        toast.error(getApiErrorMessage(err, 'Failed to delete record'));
       }
       console.error(err);
     }
@@ -362,7 +362,7 @@ const LiveMonitoring = () => {
         setBroadcastMessage('');
       }
     } catch (err) {
-      toast.error('Failed to send broadcast alert');
+      toast.error(getApiErrorMessage(err, 'Failed to send broadcast alert'));
       console.error(err);
     } finally {
       setIsBroadcasting(false);

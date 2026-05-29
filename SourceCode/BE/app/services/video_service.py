@@ -2,7 +2,6 @@ import cv2
 import time
 import logging
 import asyncio
-from datetime import datetime
 import threading
 import yaml
 import os
@@ -17,6 +16,7 @@ from sqlalchemy import inspect
 from sqlmodel import Session
 from SourceCode.BE.app.core.config import setting
 from SourceCode.BE.app.database.sql_database import engine
+from SourceCode.BE.app.utils import time as time_utils
 from SourceCode.BE.app.utils.drawing import annotated_helmet_frame
 from SourceCode.BE.app.services.violation_service import save_violation_backtask
 from SourceCode.BE.app.core.websocket_manager import manager
@@ -27,8 +27,8 @@ from SourceCode.BE.app.enums.camera_source_type import CameraSourceType
 
 logger = logging.getLogger(__name__)
 
-# Tối ưu hóa cho RTSP: Giảm độ trễ bằng cách ép OpenCV dùng FFMPEG với tham số luồng thấp
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+# Tối ưu hóa cho RTSP: cho phép đổi TCP/UDP từ .env để tuning theo từng mạng/camera.
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{setting.RTSP_TRANSPORT}"
 
 class GlobalCamera:
     def __init__(self):
@@ -237,7 +237,7 @@ class GlobalCamera:
         if source_type == CameraSourceType.RTSP.value:
             temp_cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
             if temp_cap is not None:
-                temp_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                temp_cap.set(cv2.CAP_PROP_BUFFERSIZE, setting.RTSP_CAPTURE_BUFFER_SIZE)
             return temp_cap
 
         if source_type == CameraSourceType.VIDEO_FILE.value:
@@ -776,15 +776,6 @@ class GlobalCamera:
                 cam_info = self._get_camera_info()
                 is_rtsp = self._is_rtsp_source(cam_info)
 
-                if is_rtsp and self.cap is not None:
-                    # RTSP thường bị tích buffer frame cũ. grab() vài frame trước khi
-                    # read() giúp lấy frame mới hơn, giảm cảm giác live view bị trễ.
-                    with self.cap_lock:
-                        if self.cap is not None:
-                            for _ in range(5):
-                                if self.cap is not None:
-                                    self.cap.grab()
-
                 # Lưu tham chiếu cục bộ để tránh race condition với stop()
                 with self.cap_lock:
                     cap = self.cap
@@ -1022,7 +1013,7 @@ class GlobalCamera:
                 if current_time - last_traffic_log_time >= 60.0:
                     if (safe_count_buffer > 0 or violator_count_buffer > 0) and not is_demo_source:
                         traffic_doc = {
-                            "timestamp": datetime.now(),
+                            "timestamp": time_utils.utc_now(),
                             "safe_count": safe_count_buffer,
                             "violation_count": violator_count_buffer
                         }
@@ -1044,7 +1035,7 @@ class GlobalCamera:
             if (safe_count_buffer > 0 or violator_count_buffer > 0) and final_cam_info.get("source_type") != CameraSourceType.VIDEO_FILE.value:
                 try:
                     traffic_doc = {
-                        "timestamp": datetime.now(),
+                        "timestamp": time_utils.utc_now(),
                         "safe_count": safe_count_buffer,
                         "violation_count": violator_count_buffer
                     }

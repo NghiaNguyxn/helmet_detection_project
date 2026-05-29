@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from SourceCode.BE.app.dependencies.sql_database import SessionDep
@@ -9,6 +7,7 @@ from SourceCode.BE.app.schemas.base_schema import BaseResponse
 from SourceCode.BE.app.schemas.camera_schema import CameraConnectionTestResponse, CameraCreate, CameraResponse, CameraUpdate
 from SourceCode.BE.app.services import audit_service, camera_service
 from SourceCode.BE.app.services.video_service import global_camera
+from SourceCode.BE.app.utils import time as time_utils
 
 router = APIRouter(prefix="/cameras", tags=["Cameras"])
 
@@ -163,7 +162,7 @@ async def test_camera(
             code=camera.code,
             status=camera.last_status,
             message=message,
-            checked_at=camera.last_checked_at or datetime.now(),
+            checked_at=camera.last_checked_at or time_utils.utc_now(),
         ),
     )
 

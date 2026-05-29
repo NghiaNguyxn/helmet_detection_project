@@ -17,7 +17,7 @@ import toast from 'react-hot-toast';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
 import CustomDropdown from '../components/CustomDropdown';
-import api from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
 
 const SOURCE_TYPES = [
   { value: 'webcam', label: 'Webcam' },
@@ -53,6 +53,7 @@ const CameraManagement = () => {
   const [deleteCamera, setDeleteCamera] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
   const [demoVideos, setDemoVideos] = useState([]);
+  const [currentSource, setCurrentSource] = useState(null);
 
   const filteredCameras = useMemo(() => {
     const needle = searchTerm.trim().toLowerCase();
@@ -72,9 +73,13 @@ const CameraManagement = () => {
       if (response.data.code === 200) {
         setCameras(response.data.result || []);
       }
+      const sourcesResponse = await api.get('/helmet/camera-sources');
+      if (sourcesResponse.data.code === 200) {
+        setCurrentSource(sourcesResponse.data.result?.current || null);
+      }
     } catch (error) {
       console.error('Failed to load cameras:', error);
-      toast.error('Failed to load cameras');
+      toast.error(getApiErrorMessage(error, 'Failed to load cameras'));
     } finally {
       setLoading(false);
     }
@@ -147,19 +152,27 @@ const CameraManagement = () => {
       setShowModal(false);
       fetchCameras();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Camera save failed');
+      toast.error(getApiErrorMessage(error, 'Camera save failed'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleToggle = async (camera) => {
+    const isCurrentStreamingCamera = camera.code === currentSource && camera.is_active;
+    if (isCurrentStreamingCamera) {
+      const confirmed = window.confirm(
+        `Camera ${camera.code} is currently used in Live Monitoring. Disabling it will stop the current stream. Continue?`
+      );
+      if (!confirmed) return;
+    }
+
     try {
       await api.patch(`/cameras/${camera.id}/status?is_active=${!camera.is_active}`);
       toast.success(`Camera ${camera.is_active ? 'disabled' : 'enabled'}`);
       fetchCameras();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Status update failed');
+      toast.error(getApiErrorMessage(error, 'Status update failed'));
     }
   };
 
@@ -170,7 +183,7 @@ const CameraManagement = () => {
       toast.success(response.data.message || 'Camera tested');
       fetchCameras();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Camera test failed');
+      toast.error(getApiErrorMessage(error, 'Camera test failed'));
     } finally {
       setTestingId(null);
     }
@@ -184,7 +197,7 @@ const CameraManagement = () => {
       setDeleteCamera(null);
       fetchCameras();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Delete failed');
+      toast.error(getApiErrorMessage(error, 'Delete failed'));
     }
   };
 
@@ -281,7 +294,14 @@ const CameraManagement = () => {
                         </div>
                         <div>
                           <p className="text-sm font-bold text-on-surface uppercase tracking-tight leading-none mb-1.5">{camera.name}</p>
-                          <p className="text-[10px] text-on-surface-variant font-mono">{camera.code}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-[10px] text-on-surface-variant font-mono">{camera.code}</p>
+                            {camera.code === currentSource && (
+                              <span className="px-2 py-0.5 rounded-sm bg-secondary/10 border border-secondary/20 text-secondary text-[8px] font-bold uppercase tracking-widest">
+                                Streaming
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -495,7 +515,9 @@ const CameraManagement = () => {
             </div>
             <h2 className="text-xl font-bold text-on-surface uppercase font-mono tracking-widest">Delete Camera</h2>
             <p className="text-sm text-on-surface-variant my-8 leading-relaxed">
-              Soft delete {deleteCamera.code}? Historical records will keep their camera reference.
+              {deleteCamera.code === currentSource
+                ? `Camera ${deleteCamera.code} is currently used in Live Monitoring. Deleting it will stop the current stream. Historical records will keep their camera reference.`
+                : `Soft delete ${deleteCamera.code}? Historical records will keep their camera reference.`}
             </p>
             <div className="flex gap-4">
               <button

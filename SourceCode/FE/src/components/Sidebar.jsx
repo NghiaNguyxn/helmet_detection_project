@@ -1,5 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { 
   Shield, 
   Activity, 
@@ -16,6 +17,8 @@ import { useAuth } from '../context/AuthContext';
 const Sidebar = () => {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isEmailVerified = user?.is_verified;
+  const verifyEmailMessage = 'Please verify your email before using this feature.';
 
   const menuItems = [
     { icon: Activity, label: 'Live Monitor', path: '/live' },
@@ -45,6 +48,12 @@ const Sidebar = () => {
           <NavLink
             key={item.path}
             to={item.path}
+            onClick={(event) => {
+              if (!isEmailVerified) {
+                event.preventDefault();
+                toast.error(verifyEmailMessage);
+              }
+            }}
             className={({ isActive }) => `
               flex items-center gap-3 px-4 py-3 rounded-md transition-all duration-200 group
               ${isActive 

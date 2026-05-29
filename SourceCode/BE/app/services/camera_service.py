@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -9,6 +8,7 @@ from sqlmodel import Session, select
 from SourceCode.BE.app.models.camera import CameraDB
 from SourceCode.BE.app.schemas.camera_schema import CameraCreate, CameraUpdate
 from SourceCode.BE.app.enums.camera_source_type import CameraSourceType
+from SourceCode.BE.app.utils import time as time_utils
 
 
 DEMO_VIDEO_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "demo"
@@ -115,7 +115,7 @@ def soft_delete_camera(session: Session, camera_id: int) -> CameraDB:
 
     db_camera.is_deleted = True
     db_camera.is_active = False
-    db_camera.deleted_at = datetime.now()
+    db_camera.deleted_at = time_utils.utc_now()
     session.add(db_camera)
 
     try:
@@ -133,7 +133,7 @@ def test_camera_connection(session: Session, camera_id: int) -> tuple[CameraDB, 
     if not db_camera:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Camera not found")
 
-    checked_at = datetime.now()
+    checked_at = time_utils.utc_now()
     status_value = "offline"
     message = "Camera source could not be opened"
 

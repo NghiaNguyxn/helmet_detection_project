@@ -11,10 +11,11 @@ const ViolationFilterBar = ({
   setEndDate,
   minViolations,
   setMinViolations,
-  onlyViolations,
-  setOnlyViolations,
   statusFilter,
   setStatusFilter,
+  cameraFilter,
+  setCameraFilter,
+  cameraOptions,
   setPage,
   onReset,
 }) => (
@@ -45,7 +46,7 @@ const ViolationFilterBar = ({
         </div>
       </div>
 
-      <div className="space-y-1.5 w-40">
+      <div className="space-y-1.5 w-28">
         <label className="text-[9px] font-mono uppercase text-on-surface-variant tracking-widest pl-1">Min Violations</label>
         <div className="custom-number-input">
           <button
@@ -99,25 +100,23 @@ const ViolationFilterBar = ({
         />
       </div>
 
-      <div className="flex items-center gap-2 py-2 px-2">
-        <div className="relative flex items-center justify-center">
-          <input
-            type="checkbox"
-            id="onlyViolations"
-            checked={onlyViolations}
-            onChange={(e) => {
-              setOnlyViolations(e.target.checked);
-              setPage(1);
-            }}
-            className="w-4 h-4 rounded appearance-none border border-on-surface/30 bg-surface checked:bg-primary checked:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer transition-colors peer"
-          />
-          <svg className="w-3 h-3 text-background absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M11.6666 3.5L5.24992 9.91667L2.33325 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-        <label htmlFor="onlyViolations" className="text-[10px] font-mono uppercase text-on-surface-variant tracking-widest cursor-pointer select-none">
-          Without Helmet Only
-        </label>
+      <div className="space-y-1.5">
+        <label className="text-[9px] font-mono uppercase text-on-surface-variant tracking-widest pl-1">Camera</label>
+        <CustomDropdown
+          options={cameraOptions}
+          value={cameraFilter}
+          onChange={(val) => {
+            setCameraFilter(val);
+            setPage(1);
+          }}
+          labelPrefix="Camera"
+          headerText="Camera Filter"
+          align="left"
+          width="w-46"
+          buttonClassName="w-46 justify-between"
+          menuClassName="max-h-72 overflow-y-auto"
+          compact
+        />
       </div>
 
       <div className="flex items-center gap-2 ml-auto">

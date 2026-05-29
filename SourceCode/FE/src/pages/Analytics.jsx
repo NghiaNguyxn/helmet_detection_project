@@ -197,7 +197,7 @@ const Analytics = () => {
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-on-surface uppercase leading-none">Intelligence Engine</h2>
           <p className="text-on-surface-variant text-[10px] font-mono uppercase tracking-[0.2em] mt-2 opacity-70">
-            Deep Analytics & Trends - Confirmed Violations Only
+            Deep Analytics & Trends - Confirmed Non-Demo Violations Only
           </p>
         </div>
 

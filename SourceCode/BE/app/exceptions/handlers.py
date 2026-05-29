@@ -53,6 +53,67 @@ def register_exception_handlers(app: FastAPI):
             headers={"WWW-Authenticate": "Bearer"}
         )
     
+    @app.exception_handler(auth.InvalidRefreshTokenError)
+    async def auth_exception_handler(request: Request, exc: auth.InvalidRefreshTokenError):
+        return create_error_response(
+            code=status.HTTP_401_UNAUTHORIZED,
+            message=exc.message,
+            error_code="INVALID_REFRESH_TOKEN",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    @app.exception_handler(auth.ExpiredRefreshTokenError)
+    async def auth_exception_handler(request: Request, exc: auth.ExpiredRefreshTokenError):
+        return create_error_response(
+            code=status.HTTP_401_UNAUTHORIZED,
+            message=exc.message,
+            error_code="EXPIRED_REFRESH_TOKEN",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    @app.exception_handler(auth.RevokedRefreshTokenError)
+    async def auth_exception_handler(request: Request, exc: auth.RevokedRefreshTokenError):
+        return create_error_response(
+            code=status.HTTP_401_UNAUTHORIZED,
+            message=exc.message,
+            error_code="REVOKED_REFRESH_TOKEN",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    @app.exception_handler(auth.MissingRefreshTokenError)
+    async def auth_exception_handler(request: Request, exc: auth.MissingRefreshTokenError): 
+        return create_error_response(
+            code=status.HTTP_401_UNAUTHORIZED,
+            message=exc.message,
+            error_code="MISSING_REFRESH_TOKEN",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    @app.exception_handler(auth.InvalidResetTokenError)
+    async def auth_exception_handler(request: Request, exc: auth.InvalidResetTokenError):
+        return create_error_response(
+            code=status.HTTP_401_UNAUTHORIZED,
+            message=exc.message,
+            error_code="INVALID_RESET_TOKEN",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    @app.exception_handler(user.UserInactive)
+    async def user_inactive_exception_handler(request: Request, exc: user.UserInactive):
+        return create_error_response(
+            code=status.HTTP_403_FORBIDDEN,
+            message=exc.message,
+            error_code="USER_INACTIVE"
+        )
+    
+    @app.exception_handler(user.UserNotVerified)
+    async def user_not_verified_exception_handler(request: Request, exc: user.UserNotVerified):
+        return create_error_response(
+            code=status.HTTP_403_FORBIDDEN,
+            message=exc.message,
+            error_code="USER_NOT_VERIFIED"
+        )
+    
     @app.exception_handler(auth.PermissionDenied)
     async def auth_exception_handler(request: Request, exc: auth.PermissionDenied):
         return create_error_response(

@@ -43,7 +43,18 @@ def get_user_by_username_or_email(session: Session, username_or_email: str):
     )
     return session.exec(statement).first()
 
+def get_active_user_by_id(session: Session, user_id: int):
+    """Find active user by user id"""
+
+    statement = select(UserDB).where(
+        UserDB.id == user_id,
+        UserDB.is_active == True
+    )
+    return session.exec(statement).first()
+
 def get_users(session: Session, skip: int = 0, limit: int = 100) -> list[UserDB]:
+    """Get list of users with pagination"""
+
     statement = select(UserDB).offset(skip).limit(limit)
     return session.exec(statement).all()
 

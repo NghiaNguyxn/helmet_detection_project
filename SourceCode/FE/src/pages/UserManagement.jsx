@@ -24,7 +24,7 @@ import {
   UserRoundCheck,
   UserRoundX
 } from 'lucide-react';
-import api from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
 import toast from 'react-hot-toast';
 import Skeleton from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
@@ -105,7 +105,7 @@ const UserManagement = () => {
       }
     } catch (err) {
       console.error('Error fetching users:', err);
-      setError('Access Denied: Admin access required');
+      setError(getApiErrorMessage(err, 'Access denied: admin access required'));
     } finally {
       setLoading(false);
     }
@@ -123,7 +123,7 @@ const UserManagement = () => {
         fetchUsers();
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Update failed');
+      toast.error(getApiErrorMessage(err, 'Update failed'));
     }
     setActiveMenuId(null);
   };
@@ -136,7 +136,7 @@ const UserManagement = () => {
         fetchUsers();
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Deletion failed');
+      toast.error(getApiErrorMessage(err, 'Deletion failed'));
     }
     setDeleteConfirmId(null);
   };
@@ -179,7 +179,7 @@ const UserManagement = () => {
         fetchUsers(); // Refresh list
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Registration failed');
+      toast.error(getApiErrorMessage(err, 'Registration failed'));
     } finally {
       setRegLoading(false);
     }

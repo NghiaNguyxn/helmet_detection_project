@@ -12,7 +12,31 @@ class IncorrectCredentialsError(AppError):
     def __init__(self, message: str = "Incorrect username or password"):
         super().__init__(message)
 
-class InvalidTokenError(AppError):
+class InvalidRefreshTokenError(AppError):
+    """Exception raised for invalid refresh tokens."""
+    
+    def __init__(self, message: str = "Invalid refresh token"):
+        super().__init__(message)
+
+class ExpiredRefreshTokenError(AppError):
+    """Exception raised for expired refresh tokens."""
+    
+    def __init__(self, message: str = "Refresh token has expired"):
+        super().__init__(message)
+
+class RevokedRefreshTokenError(AppError):
+    """Exception raised for revoked refresh tokens."""
+    
+    def __init__(self, message: str = "Refresh token has been revoked"):
+        super().__init__(message)
+
+class MissingRefreshTokenError(AppError):
+    """Exception raised when refresh token is missing in cookie."""
+    
+    def __init__(self, message: str = "Refresh token is missing"):
+        super().__init__(message)
+
+class InvalidResetTokenError(AppError):
     """Exception raised for invalid authentication tokens."""
     
     def __init__(self, message: str = "Invalid or expired reset token"):

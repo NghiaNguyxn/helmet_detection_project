@@ -21,6 +21,7 @@ from SourceCode.BE.app.enums.violation_status import ViolationStatus
 from SourceCode.BE.app.enums.rejection_reason import RejectionReason
 from SourceCode.BE.app.models.user import UserDB
 from SourceCode.BE.app.schemas.user_schema import ReviewUser
+from SourceCode.BE.app.utils import time as time_utils
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,8 @@ def _build_violation_query(
     end_date: datetime = None,
     min_violations: int = None,
     only_violations: bool = False,
-    status: ViolationStatus | str | None = None
+    status: ViolationStatus | str | None = None,
+    camera_code: str | None = None,
 ) -> dict:
     """Helper to build MongoDB query for violations"""
     
@@ -52,6 +54,9 @@ def _build_violation_query(
     if status and status != "all":
         status_value = status.value if isinstance(status, ViolationStatus) else status
         query["status"] = status_value
+
+    if camera_code and camera_code != "all":
+        query["camera_code"] = camera_code
         
     return query
 
@@ -64,6 +69,7 @@ async def get_violation_history(
     min_violations: int = None,
     only_violations: bool = False,
     status: ViolationStatus | str | None = None,
+    camera_code: str | None = None,
     sort_by: str = "timestamp",
     order: str = "desc"
 ) -> ViolationHistoryResponse:
@@ -72,7 +78,7 @@ async def get_violation_history(
     """
 
     # 1. Xây dựng bộ lọc (Query Filter)
-    query = _build_violation_query(start_date, end_date, min_violations, only_violations, status)
+    query = _build_violation_query(start_date, end_date, min_violations, only_violations, status, camera_code)
 
     # 2. Tính toán phân trang
     skip = (page - 1) * limit
@@ -126,7 +132,7 @@ async def save_violation_backtask(
         cloud_url = await upload_image_to_cloudinary(annotated_frame)
         logger.info(f"Image uploaded to Cloudinary: {cloud_url}")
 
-        timestamp_obj = datetime.now()
+        timestamp_obj = time_utils.utc_now()
 
         violation_doc = ViolationRecord(
             timestamp=timestamp_obj,
@@ -179,7 +185,7 @@ async def confirm_violation(
     if object_id is None:
         return None
     
-    reviewed_at = datetime.now()
+    reviewed_at = time_utils.utc_now()
     update_doc = await db_collection.find_one_and_update(
         {"_id": object_id},
         {
@@ -220,7 +226,7 @@ async def reject_violation(
     if object_id is None:
         return None
     
-    reviewed_at = datetime.now()
+    reviewed_at = time_utils.utc_now()
     update_doc = await db_collection.find_one_and_update(
         {"_id": object_id},
         {
@@ -252,11 +258,12 @@ async def export_violations_to_excel(
     end_date: datetime = None,
     min_violations: int = None,
     only_violations: bool = False,
-    status: ViolationStatus | str | None = None
+    status: ViolationStatus | str | None = None,
+    camera_code: str | None = None,
 ) -> io.BytesIO:
     """Export violations to Excel with professional styling using openpyxl"""
     
-    query = _build_violation_query(start_date, end_date, min_violations, only_violations, status)
+    query = _build_violation_query(start_date, end_date, min_violations, only_violations, status, camera_code)
     cursor = db_collection.find(query).sort("timestamp", -1)
     
     wb = openpyxl.Workbook()

@@ -17,6 +17,7 @@ from SourceCode.BE.app.schemas.base_schema import BaseResponse
 from SourceCode.BE.app.services import audit_service
 from SourceCode.BE.app.services import violation_service
 from SourceCode.BE.app.models.user import UserDB
+from SourceCode.BE.app.utils import time as time_utils
 
 router = APIRouter(prefix="/violations", tags=["Violations History"])
 
@@ -36,6 +37,11 @@ async def get_violation_history(
         alias="status",
         description="Filter by violation status: all, pending, confirmed, rejected"
     ),
+    camera_code: str | None = Query(
+        "all",
+        alias="camera_code",
+        description="Filter by camera code, or all"
+    ),
     sort_by: str = Query("timestamp"),
     order: str = Query("desc"),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection),
@@ -52,6 +58,7 @@ async def get_violation_history(
         min_violations=min_violations,
         only_violations=only_violations,
         status=status_filter,
+        camera_code=camera_code,
         sort_by=sort_by,
         order=order
     )
@@ -179,6 +186,11 @@ async def export_violation_history(
         alias="status",
         description="Filter by violation status: all, pending, confirmed, rejected"
     ),      
+    camera_code: str | None = Query(
+        "all",
+        alias="camera_code",
+        description="Filter by camera code, or all"
+    ),
     db_collection: AsyncIOMotorCollection = Depends(get_violation_collection)
 ):
     """Export filtered violation history to Excel"""
@@ -189,10 +201,11 @@ async def export_violation_history(
         end_date=end_date,
         min_violations=min_violations,
         only_violations=only_violations,
-        status=status_filter
+        status=status_filter,
+        camera_code=camera_code,
     )
     
-    filename = f"violation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    filename = f"violation_report_{time_utils.utc_now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     
     return Response(
         content=excel_buffer.getvalue(),
@@ -245,7 +258,7 @@ async def export_feedback_dataset(
         limit=limit,
     )
 
-    filename = f"ai_feedback_dataset_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    filename = f"ai_feedback_dataset_{time_utils.utc_now().strftime('%Y%m%d_%H%M%S')}.zip"
 
     return Response(
         content=dataset_buffer.getvalue(),

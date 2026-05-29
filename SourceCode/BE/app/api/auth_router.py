@@ -4,22 +4,40 @@ import logging
 logger = logging.getLogger(__name__)
 
 from datetime import timedelta
-from fastapi import APIRouter, Depends, Request, status, BackgroundTasks
+from fastapi import APIRouter, Depends, Request, Response, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 
 from SourceCode.BE.app.dependencies.sql_database import SessionDep
-from SourceCode.BE.app.dependencies.user import CurrentUser, allow_admin, allow_any_staff
-from SourceCode.BE.app.schemas import auth_schema
-from SourceCode.BE.app.services import auth_service
-from SourceCode.BE.app.services import audit_service
-from SourceCode.BE.app.services import user_service
-from SourceCode.BE.app.schemas import user_schema
+from SourceCode.BE.app.dependencies.user import CurrentUser, allow_admin
+from SourceCode.BE.app.services import auth_service, audit_service, user_service
+from SourceCode.BE.app.schemas import auth_schema, user_schema
 from SourceCode.BE.app.schemas.base_schema import BaseResponse
 from SourceCode.BE.app.core import security
 from SourceCode.BE.app.core.config import setting
+from SourceCode.BE.app.exceptions import auth as auth_exceptions, user as user_exceptions
 from SourceCode.BE.app.utils import email as email_utils
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+REFRESH_TOKEN_COOKIE_NAME = "refresh_token"
+
+def set_refresh_token_cookie(response: Response, refresh_token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_TOKEN_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        # secure=True,  # Chỉ gửi cookie qua HTTPS
+        secure=False,  # Bỏ secure để phát triển trên localhost, bật lại khi deploy
+        samesite="strict",  # Ngăn chặn CSRF
+        max_age=security.get_refresh_cookie_max_age(),
+        path="/auth"
+    )
+
+def clear_refresh_token_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_TOKEN_COOKIE_NAME,
+        path="/auth"
+    )
 
 @router.post("/register", 
             response_model=BaseResponse[user_schema.UserResponse],
@@ -66,7 +84,9 @@ async def register(
 @router.post("/login", response_model=auth_schema.Token)
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    session: SessionDep
+    session: SessionDep,
+    request: Request,
+    response: Response
 ):
     """Authenticate user and return access token"""
 
@@ -78,6 +98,10 @@ async def login(
         expires_delta=access_token_expires
     )
 
+    refresh_token = auth_service.create_refresh_token_record(session, user.id, request)
+
+    set_refresh_token_cookie(response, refresh_token)
+
     # return BaseResponse(
     #     code=status.HTTP_200_OK,
     #     message="Login successfully",
@@ -88,9 +112,59 @@ async def login(
     # )
 
     return auth_schema.Token(
-            access_token=access_token, 
-            token_type="bearer"
-        )
+        access_token=access_token, 
+        token_type="bearer"
+    )
+
+@router.post("/refresh", response_model=auth_schema.Token)
+def refresh(
+    request: Request, 
+    response: Response,
+    session: SessionDep
+):
+    """Refresh access token using the refresh token from cookie"""
+
+    old_refresh_token: str = request.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
+    if not old_refresh_token:
+        raise auth_exceptions.MissingRefreshTokenError()
+    
+    old_refresh_token_record = auth_service.get_valid_refresh_token(session, old_refresh_token)
+    user = user_service.get_active_user_by_id(session, old_refresh_token_record.user_id)
+    if not user:
+        raise user_exceptions.UserInactive()
+
+    new_access_token_expires = timedelta(minutes=setting.ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = security.create_access_token(
+        data={"sub": user.username},
+        expires_delta=new_access_token_expires
+    )
+
+    new_refresh_token = auth_service.rotate_refresh_token(session, old_refresh_token_record, request)
+    set_refresh_token_cookie(response, new_refresh_token)
+
+    return auth_schema.Token(
+        access_token=new_access_token,
+        token_type="bearer"
+    )
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    response: Response,
+    session: SessionDep,
+):
+    """Logout user by revoking the refresh token and clearing the cookie"""
+
+    refresh_token: str = request.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
+    if refresh_token is not None:
+        auth_service.revoke_refresh_token(session, refresh_token)
+
+    clear_refresh_token_cookie(response)
+
+    return BaseResponse(
+        code=status.HTTP_200_OK,
+        message="Logout successfully"
+    )
 
 @router.get("/verify-email", response_model=BaseResponse[auth_schema.Token])
 async def verify_email(
@@ -164,18 +238,23 @@ async def forgot_password(
 
 @router.post("/reset-password", response_model=BaseResponse[auth_schema.Token])
 async def reset_password(
-    request: auth_schema.ResetPasswordRequest,
+    reset_request: auth_schema.ResetPasswordRequest,
+    request: Request,
+    response: Response,
     session: SessionDep
 ):
     """Reset password using the reset token and return access token"""
 
-    user = auth_service.reset_password(session, request.token, request.new_password)
+    user = auth_service.reset_password(session, reset_request.token, reset_request.new_password)
     
     access_token_expires = timedelta(minutes=setting.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
         data={"sub": user.username},
         expires_delta=access_token_expires
     )
+
+    refresh_token = auth_service.create_refresh_token_record(session, user.id, request)
+    set_refresh_token_cookie(response, refresh_token)
 
     return BaseResponse(
         code=status.HTTP_200_OK,

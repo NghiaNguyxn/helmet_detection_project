@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlmodel import SQLModel, Field, func
+from sqlmodel import SQLModel, Field, func, DateTime
 
 from SourceCode.BE.app.enums.user_role import UserRole
 
@@ -24,12 +24,14 @@ class UserDB(UserBase, table=True):
     reset_token_expires: datetime | None = Field(default=None)
 
     # Sử dụng sa_column để dùng các tính năng đặc biệt của SQLAlchemy
-    created_at: datetime = Field(
+    created_at: datetime | None = Field(
         default=None,
+        sa_type=DateTime(timezone=False),
         sa_column_kwargs={"server_default": func.now()}
     )
-    updated_at: datetime = Field(
+    updated_at: datetime | None = Field(
         default=None,
+        sa_type=DateTime(timezone=False),
         sa_column_kwargs={
             "onupdate": func.now(),
             "server_default": func.now()

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Shield, Lock, Eye, EyeOff, CheckCircle, Loader2, AlertTriangle, ArrowRight, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import api, { API_BASE_URL } from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
@@ -62,13 +62,7 @@ const ResetPassword = () => {
         // Don't change pageStatus so the user can see the error message on the form
       }
     } catch (err) {
-      const errorData = err.response?.data;
-      const detail = errorData?.message || errorData?.detail;
-      setErrorMessage(
-        typeof detail === 'string'
-          ? detail
-          : 'Failed to reset password. Please try again or request a new link.'
-      );
+      setErrorMessage(getApiErrorMessage(err, 'Failed to reset password. Please try again or request a new link.'));
       // Don't change pageStatus to 'error' for validation/API errors
     } finally {
       setIsSubmitting(false);

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     IMAGE_INFERENCE_SIZE: int = 640
     VIDEO_INFERENCE_SIZE: int = 640
     RTSP_INFERENCE_SIZE: int = 416
+    RTSP_TRANSPORT: str = "udp"
+    RTSP_CAPTURE_BUFFER_SIZE: int = 1
     DEMO_VIOLATION_COOLDOWN_SECONDS: int = 120
     VIOLATION_DEDUP_SECONDS: float = 6.0
     VIOLATION_DEDUP_IOU_THRESHOLD: float = 0.15
@@ -56,6 +58,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    REFRESH_TOKEN_EXPIRE_DAYS: int
 
     # Email (mô phỏng)
     MAIL_SERVER: str | None = None

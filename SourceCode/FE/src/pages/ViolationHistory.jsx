@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FileArchive, FileSpreadsheet } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
-import api from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
 import socketService from '../services/websocket';
 import { useAuth } from '../context/AuthContext';
 import DeleteViolationModal from '../components/violations/DeleteViolationModal';
@@ -31,8 +31,9 @@ const ViolationHistory = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [minViolations, setMinViolations] = useState(0);
-  const [onlyViolations, setOnlyViolations] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [cameraFilter, setCameraFilter] = useState('all');
+  const [cameraOptions, setCameraOptions] = useState([{ value: 'all', label: 'All Cameras' }]);
 
   const [sortBy, setSortBy] = useState('timestamp');
   const [order, setOrder] = useState('desc');
@@ -48,6 +49,20 @@ const ViolationHistory = () => {
   const [showDatasetExportModal, setShowDatasetExportModal] = useState(false);
   const [isExportingDataset, setIsExportingDataset] = useState(false);
   const menuRef = useRef(null);
+
+  const mergedCameraOptions = useMemo(() => {
+    const optionMap = new Map(cameraOptions.map(option => [option.value, option]));
+    violations.forEach((violation) => {
+      if (!violation.camera_code || optionMap.has(violation.camera_code)) return;
+      optionMap.set(violation.camera_code, {
+        value: violation.camera_code,
+        label: violation.camera_name
+          ? `${violation.camera_code} - ${violation.camera_name}`
+          : violation.camera_code,
+      });
+    });
+    return Array.from(optionMap.values());
+  }, [cameraOptions, violations]);
 
   const patchViolationState = useCallback((reviewUpdate) => {
     setViolations(prev => {
@@ -86,8 +101,9 @@ const ViolationHistory = () => {
       if (startDate) params.append('start_date', new Date(startDate).toISOString());
       if (endDate) params.append('end_date', new Date(endDate).toISOString());
       if (minViolations > 0) params.append('min_violations', minViolations);
-      if (onlyViolations) params.append('only_violations', 'true');
+      params.append('only_violations', 'true');
       params.append('status', statusFilter);
+      params.append('camera_code', cameraFilter);
 
       const response = await api.get(`/violations/?${params.toString()}`);
       if (response.data.code === 200) {
@@ -96,11 +112,33 @@ const ViolationHistory = () => {
       }
     } catch (error) {
       console.error('Error fetching violations:', error);
-      toast.error('Failed to load records');
+      toast.error(getApiErrorMessage(error, 'Failed to load records'));
     } finally {
       setLoading(false);
     }
-  }, [endDate, limit, minViolations, onlyViolations, order, page, sortBy, startDate, statusFilter]);
+  }, [cameraFilter, endDate, limit, minViolations, order, page, sortBy, startDate, statusFilter]);
+
+  useEffect(() => {
+    const fetchCameraOptions = async () => {
+      try {
+        const response = await api.get('/helmet/camera-sources');
+        if (response.data.code === 200) {
+          const sources = response.data.result?.sources || [];
+          setCameraOptions([
+            { value: 'all', label: 'All Cameras' },
+            ...sources.map(source => ({
+              value: source.code,
+              label: source.name ? `${source.code} - ${source.name}` : source.code,
+            })),
+          ]);
+        }
+      } catch (error) {
+        console.error('Failed to load camera filters:', error);
+      }
+    };
+
+    fetchCameraOptions();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -145,7 +183,9 @@ const ViolationHistory = () => {
       if (message.event === 'new_violation') {
         const newViolation = message.data;
 
-        if (page === 1 && matchesStatusFilter(newViolation, statusFilter)) {
+        const matchesCameraFilter = cameraFilter === 'all' || newViolation.camera_code === cameraFilter;
+
+        if (page === 1 && matchesStatusFilter(newViolation, statusFilter) && matchesCameraFilter) {
           setViolations(prev => {
             if (prev.some(v => getViolationId(v) === getViolationId(newViolation))) return prev;
             return [newViolation, ...prev.slice(0, limit - 1)];
@@ -160,7 +200,7 @@ const ViolationHistory = () => {
     });
 
     return () => unsubscribe();
-  }, [page, limit, statusFilter, patchViolationState]);
+  }, [cameraFilter, page, limit, statusFilter, patchViolationState]);
 
   useEffect(() => {
     if (activeHighlightId && violations.length > 0) {
@@ -191,8 +231,8 @@ const ViolationHistory = () => {
     setStartDate('');
     setEndDate('');
     setMinViolations(0);
-    setOnlyViolations(true);
     setStatusFilter('all');
+    setCameraFilter('all');
     setPage(1);
   };
 
@@ -224,8 +264,9 @@ const ViolationHistory = () => {
       if (startDate) params.append('start_date', new Date(startDate).toISOString());
       if (endDate) params.append('end_date', new Date(endDate).toISOString());
       if (minViolations > 0) params.append('min_violations', minViolations);
-      if (onlyViolations) params.append('only_violations', 'true');
+      params.append('only_violations', 'true');
       params.append('status', statusFilter);
+      params.append('camera_code', cameraFilter);
 
       const response = await api.get(`/violations/export?${params.toString()}`, {
         responseType: 'blob'
@@ -241,7 +282,7 @@ const ViolationHistory = () => {
       toast.success('Report exported successfully');
     } catch (error) {
       console.error('Export failed:', error);
-      toast.error('Export failed');
+      toast.error(getApiErrorMessage(error, 'Export failed'));
     }
   };
 
@@ -274,8 +315,7 @@ const ViolationHistory = () => {
       toast.success('AI feedback dataset exported');
     } catch (error) {
       console.error('AI dataset export failed:', error);
-      const detail = error.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : 'Dataset export failed');
+      toast.error(getApiErrorMessage(error, 'Dataset export failed'));
     } finally {
       setIsExportingDataset(false);
     }
@@ -289,8 +329,8 @@ const ViolationHistory = () => {
         toast.success('Record deleted');
         fetchViolations();
       }
-    } catch {
-      toast.error('Could not delete record');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Could not delete record'));
     } finally {
       setIsDeleting(null);
       setDeleteConfirmId(null);
@@ -334,7 +374,7 @@ const ViolationHistory = () => {
       }
     } catch (error) {
       console.error('Review failed:', error);
-      toast.error('Could not update review status');
+      toast.error(getApiErrorMessage(error, 'Could not update review status'));
     } finally {
       setIsReviewing(false);
     }
@@ -406,10 +446,11 @@ const ViolationHistory = () => {
         setEndDate={setEndDate}
         minViolations={minViolations}
         setMinViolations={setMinViolations}
-        onlyViolations={onlyViolations}
-        setOnlyViolations={setOnlyViolations}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
+        cameraFilter={cameraFilter}
+        setCameraFilter={setCameraFilter}
+        cameraOptions={mergedCameraOptions}
         setPage={setPage}
         onReset={handleResetFilter}
       />

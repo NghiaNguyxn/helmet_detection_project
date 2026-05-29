@@ -126,12 +126,19 @@ const ViolationTable = ({
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-widest border ${violation.total_violations > 0
-                    ? 'bg-error/10 text-error border-error/20'
-                    : 'bg-secondary/10 text-secondary border-secondary/20'
-                    }`}>
-                    {violation.total_violations} {violation.total_violations > 1 ? 'Violators' : 'Violator'}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-widest border ${violation.total_violations > 0
+                      ? 'bg-error/10 text-error border-error/20'
+                      : 'bg-secondary/10 text-secondary border-secondary/20'
+                      }`}>
+                      {violation.total_violations} {violation.total_violations > 1 ? 'Violators' : 'Violator'}
+                    </span>
+                    {violation.is_demo && (
+                      <span className="px-2 py-1 rounded-sm bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-widest">
+                        Demo
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-6 py-4">
                   <ViolationStatusBadge violation={violation} />
