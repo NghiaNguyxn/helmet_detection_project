@@ -20,7 +20,7 @@ from SourceCode.BE.app.api import (
 from SourceCode.BE.app.core.config import setting
 from SourceCode.BE.app.core.websocket_manager import manager
 from SourceCode.BE.app.database.nosql_database import close_mongodb_connection, connect_to_mongodb
-from SourceCode.BE.app.database.sql_database import init_sql_db
+from SourceCode.BE.app.database.sql_database import init_initial_data
 from SourceCode.BE.app.exceptions.handlers import register_exception_handlers
 
 # Cấu hình Logging chuẩn: Thời gian xảy ra - Tên Module - Cấp độ lỗi - Nội dung chi tiết
@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
         logger.exception("Model loading failed")
         raise
 
-    init_sql_db()
-    logger.info("SQL database initialized")
+    init_initial_data()
+    logger.info("Initial SQL data initialized")
 
     await connect_to_mongodb(app)
 

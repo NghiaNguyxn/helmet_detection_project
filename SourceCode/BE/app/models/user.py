@@ -21,17 +21,17 @@ class UserDB(UserBase, table=True):
     is_verified: bool = Field(default=False)
     verification_token: str | None = Field(default=None)
     reset_token: str | None = Field(default=None)
-    reset_token_expires: datetime | None = Field(default=None)
+    reset_token_expires: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
     # Sử dụng sa_column để dùng các tính năng đặc biệt của SQLAlchemy
     created_at: datetime | None = Field(
         default=None,
-        sa_type=DateTime(timezone=False),
+        sa_type=DateTime(timezone=True),
         sa_column_kwargs={"server_default": func.now()}
     )
     updated_at: datetime | None = Field(
         default=None,
-        sa_type=DateTime(timezone=False),
+        sa_type=DateTime(timezone=True),
         sa_column_kwargs={
             "onupdate": func.now(),
             "server_default": func.now()

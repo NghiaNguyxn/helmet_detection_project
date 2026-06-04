@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from typing import Any
 
 from pydantic import field_validator, model_validator
@@ -7,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
 
     # Database
-    SQLITE_URL: str
+    POSTGRES_URL: str
     MONGO_URL: str
     DATABASE_NAME: str
     VIOLATION_COLLECTION: str
@@ -85,6 +86,12 @@ class Settings(BaseSettings):
         if value is None or value == "":
             return ["http://localhost:5173"]
         if isinstance(value, str):
+            value = value.strip()
+            if value.startswith("["):
+                parsed = json.loads(value)
+                if not isinstance(parsed, list):
+                    raise ValueError("CORS_ORIGINS JSON value must be a list")
+                return [str(origin).strip() for origin in parsed if str(origin).strip()]
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
@@ -105,8 +112,19 @@ class Settings(BaseSettings):
         # if self.FIRST_ADMIN_PASSWORD in weak_admin_passwords or len(self.FIRST_ADMIN_PASSWORD) < 8:
         #     raise ValueError("FIRST_ADMIN_PASSWORD must be at least 8 characters and not use a placeholder value")
 
-        if not Path(self.MODEL_PATH).exists():
-            raise ValueError(f"MODEL_PATH does not exist: {self.MODEL_PATH}")
+        model_path = Path(self.MODEL_PATH)
+        if not model_path.is_absolute():
+            backend_root = Path(__file__).resolve().parents[2]
+            repo_root = Path(__file__).resolve().parents[4]
+            candidates = (
+                Path.cwd() / model_path,
+                backend_root / model_path,
+                repo_root / model_path,
+            )
+            model_path = next((path for path in candidates if path.exists()), model_path)
+
+        if model_path.exists():
+            self.MODEL_PATH = str(model_path)
 
         if self.VIOLATION_THRESHOLD < 0 or self.VIOLATION_THRESHOLD > 1:
             raise ValueError("VIOLATION_THRESHOLD must be between 0 and 1")

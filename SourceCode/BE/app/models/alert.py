@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlmodel import SQLModel, Field, Relationship, func
+from sqlmodel import DateTime, SQLModel, Field, Relationship, func
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -13,6 +13,7 @@ class SecurityAlert(SQLModel, table=True):
     camera_id: str = Field(nullable=False)
     timestamp: datetime = Field(
         default=None,
+        sa_type=DateTime(timezone=True),
         sa_column_kwargs={"server_default": func.now()}
     )
     

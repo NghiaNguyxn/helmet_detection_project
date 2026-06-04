@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Column, JSON
-from sqlmodel import Field, SQLModel, func
+from sqlmodel import DateTime, Field, SQLModel, func
 
 
 class AuditLogDB(SQLModel, table=True):
@@ -21,5 +21,6 @@ class AuditLogDB(SQLModel, table=True):
     created_at: datetime = Field(
         default=None,
         index=True,
+        sa_type=DateTime(timezone=True),
         sa_column_kwargs={"server_default": func.now()},
     )

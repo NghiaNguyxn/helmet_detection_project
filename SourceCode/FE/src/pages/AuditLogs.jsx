@@ -301,7 +301,7 @@ const AuditLogs = () => {
         </div>
       </form>
 
-      <div className="surface-1 border border-on-surface/5 rounded-md overflow-hidden tech-glow min-h-[500px]">
+      <div className="surface-1 border border-on-surface/5 rounded-md overflow-visible tech-glow min-h-[500px]">
         <div className="overflow-x-auto">
           <table className="w-full text-left min-w-[980px]">
             <thead className="bg-surface-low text-on-surface-variant text-[10px] font-mono uppercase tracking-widest border-b border-on-surface/5">

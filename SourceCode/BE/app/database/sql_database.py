@@ -5,13 +5,10 @@ from SourceCode.BE.app.models import audit_log, alert, camera, user, refresh_tok
 from SourceCode.BE.app.core.config import setting
 
 engine = create_engine(
-    setting.SQLITE_URL,
+    setting.POSTGRES_URL,
     # echo=True,           # Log các câu lệnh SQL ra terminal (tiện để debug)
-    connect_args={"check_same_thread": False}
 )
 
-def init_sql_db():
-    SQLModel.metadata.create_all(engine)
-    
+def init_initial_data():
     with Session(engine) as session:
         create_initial_admin(session)

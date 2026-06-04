@@ -21,9 +21,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     to_encode = data.copy()
 
     if expires_delta:
-        expire = time_utils.utc_now_aware() + expires_delta
+        expire = time_utils.utc_now() + expires_delta
     else:
-        expire = time_utils.utc_now_aware() + timedelta(minutes=setting.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = time_utils.utc_now() + timedelta(minutes=setting.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire})
 

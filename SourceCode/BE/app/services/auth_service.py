@@ -71,7 +71,7 @@ def get_valid_refresh_token(session: Session, refresh_token: str) -> RefreshToke
     if not token_record:
         raise auth_exceptions.InvalidRefreshTokenError()
     
-    if time_utils.as_utc_naive(token_record.expires_at) < time_utils.utc_now():
+    if time_utils.as_utc_aware(token_record.expires_at) < time_utils.utc_now():
         raise auth_exceptions.ExpiredRefreshTokenError()
     
     if token_record.revoked_at is not None:
