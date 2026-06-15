@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     DATABASE_NAME: str
     VIOLATION_COLLECTION: str
     TRAFFIC_STATS_COLLECTION: str
+    APP_TIMEZONE: str = "Asia/Ho_Chi_Minh"
 
     # AI & System 
     MODEL_PATH: str

@@ -13,7 +13,7 @@ const CustomDropdown = ({
   compact = false,
   containerClassName = "",
   buttonClassName = "",
-  menuClassName = "overflow-hidden",
+  menuClassName = "",
   showLabelPrefix = true,
   optionClassName = ""
 }) => {
@@ -48,7 +48,9 @@ const CustomDropdown = ({
       </button>
 
       {isOpen && (
-        <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-2 ${width} bg-surface-low border border-on-surface/10 rounded-md shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-200 ${menuClassName}`}>
+        <div
+          className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-2 ${width} max-h-72 bg-surface-low border border-on-surface/10 rounded-md shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-200 overflow-y-auto ${menuClassName}`}
+        >
           <div className="px-4 py-2 bg-surface-medium border-b border-on-surface/5 flex justify-end">
             <span className="text-[8px] font-mono text-on-surface-variant uppercase tracking-widest opacity-50">{headerText}</span>
           </div>

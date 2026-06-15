@@ -1,8 +1,10 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from motor.motor_asyncio import AsyncIOMotorCollection
 
+from SourceCode.BE.app.core.config import setting
 from SourceCode.BE.app.schemas.report_schema import (
     DailyViolationCount,
     HourlyViolationCount,
@@ -11,6 +13,7 @@ from SourceCode.BE.app.schemas.report_schema import (
 )
 
 logger = logging.getLogger(__name__)
+APP_TIMEZONE = ZoneInfo(setting.APP_TIMEZONE)
 
 
 def _confirmed_violation_match(start_dt: datetime, end_dt: datetime) -> dict:
@@ -20,6 +23,35 @@ def _confirmed_violation_match(start_dt: datetime, end_dt: datetime) -> dict:
         "is_demo": {"$ne": True},
     }
 
+
+def _utc_date_range(start_date: date, end_date: date) -> tuple[datetime, datetime]:
+    start_local = datetime.combine(start_date, time.min, tzinfo=APP_TIMEZONE)
+    end_local = datetime.combine(end_date, time.max, tzinfo=APP_TIMEZONE)
+    return (
+        start_local.astimezone(timezone.utc),
+        end_local.astimezone(timezone.utc),
+    )
+
+
+def _date_group_expression() -> dict:
+    return {
+        "$dateToString": {
+            "format": "%Y-%m-%d",
+            "date": "$timestamp",
+            "timezone": setting.APP_TIMEZONE,
+        }
+    }
+
+
+def _hour_group_expression() -> dict:
+    return {
+        "$hour": {
+            "date": "$timestamp",
+            "timezone": setting.APP_TIMEZONE,
+        }
+    }
+
+
 async def get_summary_report(
         collection: AsyncIOMotorCollection,
         traffic_collection: AsyncIOMotorCollection,
@@ -28,15 +60,14 @@ async def get_summary_report(
     ) -> SummaryReportResponse:
     """Generate a summary report from confirmed violations and safe traffic counts."""
 
-    start_dt = datetime.combine(start_date, datetime.min.time())
-    end_dt = datetime.combine(end_date, datetime.max.time())
+    start_dt, end_dt = _utc_date_range(start_date, end_date)
     confirmed_match = _confirmed_violation_match(start_dt, end_dt)
 
     # Phân tích theo ngày (Daily Breakdown)
     daily_pipeline = [
         {"$match": confirmed_match},
         {"$group": {
-            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+            "_id": _date_group_expression(),
             "count": {"$sum": {"$ifNull": ["$total_violations", 0]}},
         }},
         {"$sort": {"_id": 1}},
@@ -95,7 +126,7 @@ async def get_summary_report(
     hourly_pipeline = [
         {"$match": confirmed_match},
         {"$group": {
-            "_id": {"$hour": "$timestamp"},
+            "_id": _hour_group_expression(),
             "count": {"$sum": {"$ifNull": ["$total_violations", 0]}},
         }},
         {"$sort": {"_id": 1}},
@@ -140,17 +171,15 @@ async def get_trend_report(
     ) -> TrendReportResponse:
     """Retrieve trend data using confirmed violations and AI safe counts."""
 
-    start_dt = datetime.combine(start_date, datetime.min.time())
-    end_dt = datetime.combine(end_date, datetime.max.time())
+    start_dt, end_dt = _utc_date_range(start_date, end_date)
     confirmed_match = _confirmed_violation_match(start_dt, end_dt)
 
-    date_format = "%Y-%m-%d" if granularity == "day" else None
     if granularity == "day":
-        violation_group_id = {"$dateToString": {"format": date_format, "date": "$timestamp"}}
-        traffic_group_id = {"$dateToString": {"format": date_format, "date": "$timestamp"}}
+        violation_group_id = _date_group_expression()
+        traffic_group_id = _date_group_expression()
     else:
-        violation_group_id = {"$hour": "$timestamp"}
-        traffic_group_id = {"$hour": "$timestamp"}
+        violation_group_id = _hour_group_expression()
+        traffic_group_id = _hour_group_expression()
 
     # Tính toán độ chính xác (accuracy) trung bình cho mỗi nhóm (ngày hoặc giờ)
     acc_pipeline = [

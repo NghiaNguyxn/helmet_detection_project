@@ -273,7 +273,7 @@ const Login = () => {
 
         <div className="mt-6 flex justify-between px-2">
           <span className="text-[10px] text-on-surface-variant font-mono uppercase">V1.0.0 Stable</span>
-          <span className="text-[10px] text-on-surface-variant font-mono uppercase">Node ID: 0xFF2A</span>
+          <span className="text-[10px] text-on-surface-variant font-mono uppercase">Helmet Detection System</span>
         </div>
       </div>
     </div>

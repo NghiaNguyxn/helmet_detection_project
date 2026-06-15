@@ -906,18 +906,21 @@ class GlobalCamera:
                 confirmed_violators = []
                 
                 for det in latest_all_detections:
-                    if det.class_id != 1:
-                        continue
                     t_id = det.track_id
-                    confirmed_by_track = False
 
+                    # Giữ lịch sử class_id của mọi track_id để thống kê lưu lượng người đội/không đội
                     if t_id is not None:
-                        # 1. Lưu lịch sử class của ID này (tối đa 8 frame gần nhất)
                         if t_id not in self.track_history:
                             self.track_history[t_id] = deque(maxlen=8)
                         self.track_history[t_id].append(det.class_id)
 
-                        # 2. Chỉ xác nhận nếu ID này chưa từng được log trong phiên hiện tại
+                    if det.class_id != 1:
+                        continue
+
+                    confirmed_by_track = False
+
+                    if t_id is not None:
+                        # Chỉ xác nhận nếu ID này chưa từng được log trong phiên hiện tại
                         if t_id not in self.logged_ids:
                             history = list(self.track_history[t_id])
                             confirmed_by_track = len(history) >= 3 and (history.count(1) / len(history)) >= 0.6
@@ -990,7 +993,12 @@ class GlobalCamera:
                 lost_ids = set(self.track_history.keys()) - current_ids
                 for tid in list(lost_ids):
                     if tid not in self.logged_ids and tid not in counted_safe_ids:
-                        if len(self.track_history[tid]) >= 3:
+                        history = list(self.track_history[tid])
+                        is_stable_safe_track = (
+                            len(history) >= 3
+                            and (history.count(0) / len(history)) >= 0.6
+                        )
+                        if is_stable_safe_track:
                             counted_safe_ids.add(tid)
                             safe_count_buffer += 1
 

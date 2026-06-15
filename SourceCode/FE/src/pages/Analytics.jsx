@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
 } from 'recharts';
 import {
@@ -12,6 +12,13 @@ import api from '../services/api';
 import CustomDropdown from '../components/CustomDropdown';
 import Skeleton from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
+
+const toLocalDateValue = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const Sparkline = ({ data, color, height = 30, width = 100 }) => {
   if (!data || data.length < 2) return <div style={{ height, width }}></div>;
@@ -88,22 +95,22 @@ const Analytics = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = toLocalDateValue(new Date());
       let startDateStr = today;
       let endDateStr = today;
 
       const start = new Date();
       if (timeRange === 'yesterday') {
         start.setDate(start.getDate() - 1);
-        const yesterdayStr = start.toISOString().split('T')[0];
+        const yesterdayStr = toLocalDateValue(start);
         startDateStr = yesterdayStr;
         endDateStr = yesterdayStr; // Chỉ lấy duy nhất ngày hôm qua
       } else if (timeRange === '7d') {
         start.setDate(start.getDate() - 7);
-        startDateStr = start.toISOString().split('T')[0];
+        startDateStr = toLocalDateValue(start);
       } else if (timeRange === '30d') {
         start.setDate(start.getDate() - 30);
-        startDateStr = start.toISOString().split('T')[0];
+        startDateStr = toLocalDateValue(start);
       } else if (timeRange === 'all') {
         startDateStr = '2024-01-01';
       }
@@ -270,7 +277,7 @@ const Analytics = () => {
       </div>
 
       <div className="grid grid-cols-12 gap-6">
-        {/* Stacked Area Chart */}
+        {/* Traffic Trend Chart */}
         <div className="col-span-12 lg:col-span-8 surface-1 border border-on-surface/5 p-6 rounded-md tech-glow flex flex-col h-[450px]">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
@@ -311,17 +318,7 @@ const Analytics = () => {
               </div>
             ) : chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorSafe" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4edea3" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#4edea3" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="colorViolations" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ffb2b7" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#ffb2b7" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
+                <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2d3449" vertical={false} opacity={0.5} />
                   <XAxis
                     dataKey="name"
@@ -345,25 +342,25 @@ const Analytics = () => {
                     itemStyle={{ fontSize: '10px', textTransform: 'uppercase', fontFamily: 'monospace' }}
                     labelStyle={{ color: '#c0c6d6', marginBottom: '8px', fontSize: '10px', fontWeight: 'bold' }}
                   />
-                  <Area
+                  <Line
                     type="monotone"
                     dataKey="safe"
                     name="Safe Persons"
-                    stackId="1"
                     stroke="#4edea3"
-                    fillOpacity={1}
-                    fill="url(#colorSafe)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, fill: '#4edea3', strokeWidth: 0 }}
                   />
-                  <Area
+                  <Line
                     type="monotone"
                     dataKey="violations"
                     name="Violations"
-                    stackId="1"
                     stroke="#ffb2b7"
-                    fillOpacity={1}
-                    fill="url(#colorViolations)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, fill: '#ffb2b7', strokeWidth: 0 }}
                   />
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             ) : (
               <EmptyState

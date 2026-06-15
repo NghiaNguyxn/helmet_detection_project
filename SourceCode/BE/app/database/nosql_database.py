@@ -1,5 +1,6 @@
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from fastapi import FastAPI
+from datetime import timezone
 import logging
 
 from SourceCode.BE.app.core.config import setting
@@ -11,7 +12,11 @@ async def connect_to_mongodb(app: FastAPI):
 
     logger.info("Connecting to MongoDB Atlas...")
     try:
-        app.state.mongodb_client = AsyncIOMotorClient(setting.MONGO_URL)
+        app.state.mongodb_client = AsyncIOMotorClient(
+            setting.MONGO_URL,
+            tz_aware=True,
+            tzinfo=timezone.utc,
+        )
         app.state.db = app.state.mongodb_client[setting.DATABASE_NAME]
         # Verify connection
         await app.state.mongodb_client.admin.command('ping')
