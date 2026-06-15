@@ -316,10 +316,9 @@ async def export_violations_to_excel(
         max_len = 0
         col_letter = col[0].column_letter
         for cell in col:
-            try:
-                if len(str(cell.value)) > max_len:
-                    max_len = len(str(cell.value))
-            except: pass
+            cell_length = len(str(cell.value)) if cell.value is not None else 0
+            if cell_length > max_len:
+                max_len = cell_length
         ws.column_dimensions[col_letter].width = min(max_len + 2, 50)
 
     output = io.BytesIO()

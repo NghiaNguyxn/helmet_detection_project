@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
@@ -78,21 +78,7 @@ const Analytics = () => {
     { value: 'all', label: 'All Time' },
   ];
 
-  useEffect(() => {
-    fetchData();
-  }, [timeRange, granularity]);
-
-  // Auto-refresh data every 5 minutes (300000ms)
-  // Approach: Soft-polling is much better for Analytics than WebSocket to avoid UI jitter and DB overload
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      fetchData();
-    }, 300000);
-
-    return () => clearInterval(intervalId);
-  }, [timeRange, granularity]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const today = toLocalDateValue(new Date());
@@ -127,7 +113,17 @@ const Analytics = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [timeRange, granularity]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Soft-polling avoids UI jitter and unnecessary database pressure.
+  useEffect(() => {
+    const intervalId = setInterval(fetchData, 300000);
+    return () => clearInterval(intervalId);
+  }, [fetchData]);
 
   const chartData = (trend && trend.labels && trend.datasets) ? trend.labels.map((label, index) => ({
     name: label,
